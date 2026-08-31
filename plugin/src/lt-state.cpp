@@ -16,9 +16,9 @@ json LtState::defaultsLook()
 {
 	static const char *LOOK = R"({
 	  "content": {
-	    "topline": { "enabled": true, "text": "שינוי כיוון – עם ד\"ר ניסים כץ" },
-	    "headline": { "text": "הביקורת על הימין בכלל ועל נתניהו בפרט" },
-	    "badge": { "enabled": true, "text": "knesset.tv/live" },
+	    "topline": { "enabled": true, "text": "שם הדובר – תפקיד או תיאור" },
+	    "headline": { "text": "כותרת לדוגמה: כך ניתן להציג טקסט ארוך יותר בתחתית המסך" },
+	    "badge": { "enabled": true, "text": "example.com/live" },
 	    "logo": { "enabled": true, "url": "/assets/logo-placeholder.svg", "scale": 1 }
 	  },
 	  "style": {
