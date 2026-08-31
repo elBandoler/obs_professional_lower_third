@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Lower Thirds</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/control.css">
+</head>
+<body>
+
+<div id="offline-banner">Server connection lost — reconnecting…</div>
+
+<header id="topbar">
+  <div class="title">LOWER <b>THIRDS</b></div>
+  <button id="mode-toggle" title="Switch between the full editor and a simplified operator view (quick presets + text editing only)">SIMPLE</button>
+  <div class="pills">
+    <span id="pill-onair" class="pill">HIDDEN</span>
+    <span id="pill-pgm" class="pill" title="Program overlay browser sources connected">PGM 0</span>
+    <span id="pill-obs" class="pill" title="obs-websocket status">OBS off</span>
+  </div>
+</header>
+
+<section id="preview-wrap">
+  <div id="preview-box">
+    <iframe id="preview-frame" src="/overlay?role=preview&label=off&bg=checker" scrolling="no"></iframe>
+    <div id="preview-tag">PREVIEW</div>
+  </div>
+  <div id="preview-tools">
+    <span class="pv-label">BG</span>
+    <button class="pv-bg" data-bg="checker" title="Checkerboard">▦</button>
+    <button class="pv-bg" data-bg="black" title="Black">■</button>
+    <button class="pv-bg" data-bg="white" title="Light">□</button>
+    <button class="pv-bg" data-bg="green" title="Green">▩</button>
+    <span class="spacer"></span>
+    <button id="btn-preview-anim" title="Replay the intro animation in the preview only">▶ test animation</button>
+  </div>
+</section>
+
+<section id="actions">
+  <button id="btn-show" title="Commit pending changes and animate the lower third IN">SHOW</button>
+  <button id="btn-take" title="Commit pending changes to program (animated unless animations are off)">TAKE</button>
+  <button id="btn-hide" title="Animate the lower third OUT">HIDE</button>
+</section>
+<section id="actions-sub">
+  <button id="btn-revert" title="Discard pending changes, back to what is on program">↺ discard changes</button>
+  <label id="anim-chip" title="Master animation switch. Off = TAKE / Transition applies changes instantly.">
+    <input type="checkbox" id="anim-master"> animations
+  </label>
+</section>
+
+<main id="sections"></main>
+
+<footer id="foot">
+  <span id="foot-note"></span>
+</footer>
+
+<input type="file" id="logo-file" accept="image/*" style="display:none">
+<input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+<datalist id="fontlist"></datalist>
+
+<script src="/control.js"></script>
+</body>
+</html>

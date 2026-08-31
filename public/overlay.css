@@ -1,0 +1,311 @@
+/* OBS Lower Thirds — overlay styles.
+   Written flat (no CSS nesting) so it runs on the older Chromium builds
+   embedded in OBS 28/29 as well as current ones. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* test backgrounds (?bg=checker|black|white|green) */
+body.bg-checker {
+  background: repeating-conic-gradient(#3c3c40 0% 25%, #2a2a2e 0% 50%) 0 0 / 36px 36px;
+}
+body.bg-black { background: #000; }
+body.bg-white { background: #dfe3e8; }
+body.bg-green { background: #00b140; }
+
+/* ------------------------------------------------------------ stage */
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0 var(--margin-side, 0px) var(--margin-bottom, 64px) var(--margin-side, 0px);
+  font-family: var(--font, sans-serif);
+}
+#stage[data-anchor="center"] { justify-content: center; }
+#stage[data-anchor="right"]  { justify-content: flex-end; }
+
+#stage.hidden { visibility: hidden; }
+
+.lt {
+  width: fit-content;
+  max-width: var(--maxw, 70%);
+  filter: var(--shadow-filter, none);
+}
+#stage[data-fullwidth="1"] .lt { width: 100%; max-width: none; }
+
+/* ------------------------------------------------------------ grid */
+
+.lt-grid {
+  display: grid;
+  direction: ltr; /* physical layout; text direction is applied inside bars */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top  side-top"
+    "main side-main";
+  column-gap: var(--gap, 4px);
+  row-gap: var(--gap, 4px);
+  align-items: stretch;
+}
+#stage[data-logoside="left"] .lt-grid {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "side-top  top"
+    "side-main main";
+}
+#stage[data-has-top="0"] .lt-grid { row-gap: 0; }
+#stage[data-has-side="0"] .lt-grid { column-gap: 0; }
+
+.topline-cell  { grid-area: top;       display: flex; align-items: stretch; justify-content: flex-start; min-width: 0; }
+.badge-cell    { grid-area: side-top;  display: flex; align-items: stretch; }
+.headline-cell { grid-area: main;      display: flex; align-items: stretch; justify-content: flex-start; min-width: 0; }
+.logo-cell     { grid-area: side-main; display: flex; align-items: stretch; }
+
+#stage[data-dir="rtl"] .topline-cell,
+#stage[data-dir="rtl"] .headline-cell { justify-content: flex-end; }
+
+#stage[data-has-top="0"] .topline-cell,
+#stage[data-has-top="0"] .badge-cell { display: none; }
+#stage[data-has-side="0"] .badge-cell,
+#stage[data-has-side="0"] .logo-cell { display: none; }
+
+/* ------------------------------------------------------------ bars */
+
+.bar {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+}
+#stage[data-fullwidth="1"] .headline-cell .bar { width: 100%; }
+
+.bar.headline {
+  background: var(--hl-bg, #fff);
+  color: var(--hl-color, #0d2b6b);
+  font-size: var(--hl-size, 56px);
+  font-weight: var(--hl-weight, 800);
+  letter-spacing: var(--hl-ls, 0px);
+  padding: var(--hl-pady, 16px) var(--hl-padx, 30px);
+  line-height: 1.18;
+}
+.bar.topline {
+  background: var(--tl-bg, #fff);
+  color: var(--tl-color, #111);
+  font-size: var(--tl-size, 28px);
+  font-weight: var(--tl-weight, 600);
+  letter-spacing: var(--tl-ls, 0px);
+  padding: var(--tl-pady, 9px) var(--tl-padx, 24px);
+  line-height: 1.2;
+}
+
+.badge {
+  background: var(--badge-bg, #1c56d6);
+  color: var(--badge-color, #fff);
+  font-size: var(--badge-size, 23px);
+  font-weight: var(--badge-weight, 700);
+  width: 100%;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.28em 0.9em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.logobox {
+  background: var(--logo-bg, #fff);
+  padding: var(--logo-pad, 12px);
+  min-width: var(--logo-minw, 180px);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.logobox img {
+  height: calc(var(--logo-h, 64px) * var(--logo-scale, 1));
+  max-width: 300px;
+  object-fit: contain;
+  display: block;
+}
+.logobox img.logo-exit {
+  position: absolute;
+}
+
+/* text container (clips the swap animation) */
+.txt {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  text-align: var(--talign, start);
+}
+#stage[data-dir="rtl"] .txt { direction: rtl; }
+#stage[data-dir="ltr"] .txt { direction: ltr; }
+.line { display: block; }
+.line-exit {
+  position: absolute;
+  inset: 0;
+}
+
+/* ------------------------------------------------------------ edges */
+
+#stage[data-edges="rounded"] .bar,
+#stage[data-edges="rounded"] .badge,
+#stage[data-edges="rounded"] .logobox {
+  border-radius: var(--radius, 14px);
+}
+#stage[data-edges="chamfer"] .bar,
+#stage[data-edges="chamfer"] .badge,
+#stage[data-edges="chamfer"] .logobox {
+  clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
+  padding-left: calc(var(--chamfer, 26px) * 0.9);
+  padding-right: calc(var(--chamfer, 26px) * 0.9);
+}
+#stage[data-edges="chamfer"][data-dir="rtl"] .bar,
+#stage[data-edges="chamfer"][data-dir="rtl"] .badge,
+#stage[data-edges="chamfer"][data-dir="rtl"] .logobox {
+  clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 100%, var(--chamfer, 26px) 100%);
+}
+
+/* ------------------------------------------------------------ accent */
+
+.bar.headline::before {
+  content: "";
+  position: absolute;
+  display: none;
+  background: var(--accent-color, #1c56d6);
+  z-index: 2;
+}
+#stage[data-accent="top"] .bar.headline::before {
+  display: block;
+  top: 0; left: 0; right: 0;
+  height: var(--accent-h, 6px);
+}
+#stage[data-accent="underline"] .bar.headline::before {
+  display: block;
+  bottom: 0; left: 0; right: 0;
+  height: var(--accent-h, 6px);
+}
+#stage[data-accent="side"] .bar.headline::before {
+  display: block;
+  top: 0; bottom: 0; left: 0;
+  width: var(--accent-h, 6px);
+}
+#stage[data-accent="side"][data-dir="rtl"] .bar.headline::before {
+  left: auto; right: 0;
+}
+
+/* ------------------------------------------------- property morphing */
+
+#stage.prop-anim { transition: padding var(--change-ms, 450ms) var(--ease); }
+#stage.prop-anim .lt { transition: filter var(--change-ms, 450ms) var(--ease), max-width var(--change-ms, 450ms) var(--ease); }
+#stage.prop-anim .lt-grid { transition: column-gap var(--change-ms, 450ms) var(--ease), row-gap var(--change-ms, 450ms) var(--ease); }
+#stage.prop-anim .bar,
+#stage.prop-anim .badge,
+#stage.prop-anim .logobox {
+  transition-property: background, background-color, color, width, min-width, border-radius, padding, font-size, letter-spacing, clip-path, opacity;
+  transition-duration: var(--change-ms, 450ms);
+  transition-timing-function: var(--ease);
+}
+#stage.prop-anim .logobox img {
+  transition: height var(--change-ms, 450ms) var(--ease), opacity var(--change-ms, 450ms) var(--ease);
+}
+
+/* --------------------------------------------------- text swap anim */
+
+.line-exit.swap-slide { animation: kf-line-out var(--change-ms, 450ms) var(--ease) both; }
+.line-enter.swap-slide { animation: kf-line-in var(--change-ms, 450ms) var(--ease) both; }
+.line-exit.swap-fade { animation: kf-fade-out var(--change-ms, 450ms) var(--ease) both; }
+.line-enter.swap-fade { animation: kf-fade-in var(--change-ms, 450ms) var(--ease) both; }
+
+@keyframes kf-line-out { from { transform: translateY(0); } to { transform: translateY(-112%); } }
+@keyframes kf-line-in  { from { transform: translateY(112%); } to { transform: translateY(0); } }
+@keyframes kf-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes kf-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+
+.logo-exit { animation: kf-fade-out var(--change-ms, 450ms) var(--ease) both; }
+.logo-enter { animation: kf-fade-in var(--change-ms, 450ms) var(--ease) both; }
+
+/* ------------------------------------------------------ in/out anims */
+
+.anim-el { /* the four animatable blocks; --i set inline */ }
+
+#stage.anim-in .anim-el {
+  animation-duration: var(--in-ms, 700ms);
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+  animation-delay: calc(var(--i, 0) * var(--stagger, 90ms));
+}
+#stage.anim-out .anim-el {
+  animation-duration: var(--out-ms, 500ms);
+  animation-timing-function: var(--ease-out-curve, var(--ease));
+  animation-fill-mode: both;
+  animation-delay: calc((var(--n, 4) - 1 - var(--i, 0)) * var(--stagger, 90ms));
+}
+
+/* slide-up */
+#stage[data-in="slide-up"].anim-in .anim-el { animation-name: kf-slideup-in; }
+#stage[data-out="slide-up"].anim-out .anim-el { animation-name: kf-slideup-out; }
+@keyframes kf-slideup-in  { from { transform: translateY(45vh); } to { transform: translateY(0); } }
+@keyframes kf-slideup-out { from { transform: translateY(0); } to { transform: translateY(45vh); } }
+
+/* slide-side */
+#stage[data-in="slide-side"].anim-in .anim-el { animation-name: kf-slideside-in; }
+#stage[data-out="slide-side"].anim-out .anim-el { animation-name: kf-slideside-out; }
+#stage[data-dir="rtl"][data-in="slide-side"].anim-in .anim-el { animation-name: kf-slideside-in-rtl; }
+#stage[data-dir="rtl"][data-out="slide-side"].anim-out .anim-el { animation-name: kf-slideside-out-rtl; }
+@keyframes kf-slideside-in      { from { transform: translateX(-80px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes kf-slideside-out     { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-80px); opacity: 0; } }
+@keyframes kf-slideside-in-rtl  { from { transform: translateX(80px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes kf-slideside-out-rtl { from { transform: translateX(0); opacity: 1; } to { transform: translateX(80px); opacity: 0; } }
+
+/* wipe */
+#stage[data-in="wipe"].anim-in .anim-el { animation-name: kf-wipe-in; }
+#stage[data-out="wipe"].anim-out .anim-el { animation-name: kf-wipe-out; }
+#stage[data-dir="rtl"][data-in="wipe"].anim-in .anim-el { animation-name: kf-wipe-in-rtl; }
+#stage[data-dir="rtl"][data-out="wipe"].anim-out .anim-el { animation-name: kf-wipe-out-rtl; }
+@keyframes kf-wipe-in      { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes kf-wipe-out     { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 100% 0 0); } }
+@keyframes kf-wipe-in-rtl  { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+@keyframes kf-wipe-out-rtl { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 0 100%); } }
+
+/* fade */
+#stage[data-in="fade"].anim-in .anim-el { animation-name: kf-fade-in; }
+#stage[data-out="fade"].anim-out .anim-el { animation-name: kf-fade-out; }
+
+/* pop */
+#stage[data-in="pop"].anim-in .anim-el { animation-name: kf-pop-in; }
+#stage[data-out="pop"].anim-out .anim-el { animation-name: kf-pop-out; }
+@keyframes kf-pop-in  { from { transform: scale(0.84) translateY(26px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+@keyframes kf-pop-out { from { transform: scale(1) translateY(0); opacity: 1; } to { transform: scale(0.84) translateY(26px); opacity: 0; } }
+
+/* note: wipe uses clip-path, which overrides the chamfer clip while the
+   element animates; the chamfer is restored the moment the animation ends */
+
+/* --------------------------------------------------------- pvw badge */
+
+#pvw-tag {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 99;
+  font: 700 13px/1 system-ui, sans-serif;
+  letter-spacing: 2px;
+  color: #ffd76a;
+  background: rgba(20, 20, 20, 0.55);
+  border: 1px solid rgba(255, 215, 106, 0.7);
+  border-radius: 4px;
+  padding: 5px 8px;
+}

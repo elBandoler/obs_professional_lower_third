@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# runtime state / uploaded assets (created at run time, not source)
+/data/
+
+# native plugin: fetched/generated build inputs (see plugin/deps/fetch-deps.ps1
+# and plugin/build.ps1, which regenerate all of this automatically)
+plugin/deps/dl/
+plugin/deps/obs/libobs/
+plugin/deps/obs/frontend/
+plugin/deps/lib/
+
+# native plugin: build outputs
+plugin/build/
+plugin/dist/
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.log
