@@ -226,6 +226,12 @@ json LtState::normalizeElement(const json &in)
 	place["spanAll"] = boolOr(p, "spanAll", false);
 	place["rowSpan"] = clampInt(numOr(p, "rowSpan", 1), 1, 20);
 	place["colSpan"] = clampInt(numOr(p, "colSpan", 1), 1, 20);
+	{
+		/* push the element to one side of its cell (see server.js) */
+		std::string pin = p.contains("pin") && p["pin"].is_string()
+			? p["pin"].get<std::string>() : std::string("auto");
+		place["pin"] = (pin == "left" || pin == "right") ? pin : std::string("auto");
+	}
 	if (place["spanAll"].get<bool>()) { place["row"] = 0; place["rowSpan"] = 1; }
 	out["place"] = place;
 
@@ -387,7 +393,7 @@ json LtState::migrateLook(const json &lookIn)
 	topline["name"] = "Top line";
 	topline["enabled"] = c.contains("topline") && boolOr(c["topline"], "enabled", true);
 	topline["place"] = json{ { "row", 0 }, { "col", logoLeft ? 1 : 0 }, { "order", 0 },
-		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 }, { "pin", "auto" } };
 	topline["text"] = c.contains("topline") ? strOr(c["topline"], "text", "") : json("");
 	topline["style"] = styleFrom("text", bars.contains("topline") ? bars["topline"] : json::object(), json::object());
 	els.push_back(topline);
@@ -397,7 +403,7 @@ json LtState::migrateLook(const json &lookIn)
 	badge["name"] = "Badge";
 	badge["enabled"] = c.contains("badge") && boolOr(c["badge"], "enabled", true);
 	badge["place"] = json{ { "row", 0 }, { "col", logoLeft ? 0 : 1 }, { "order", 0 },
-		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 }, { "pin", "auto" } };
 	badge["text"] = c.contains("badge") ? strOr(c["badge"], "text", "") : json("");
 	badge["style"] = styleFrom("text", bars.contains("badge") ? bars["badge"] : json::object(),
 		json::parse(R"({"align":"center","nowrap":true,"padX":21,"padY":6})"));
@@ -408,7 +414,7 @@ json LtState::migrateLook(const json &lookIn)
 	headline["name"] = "Headline";
 	headline["enabled"] = true;
 	headline["place"] = json{ { "row", 1 }, { "col", logoLeft ? 1 : 0 }, { "order", 0 },
-		{ "stretch", fullWidth }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+		{ "stretch", fullWidth }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 }, { "pin", "auto" } };
 	headline["text"] = c.contains("headline") ? strOr(c["headline"], "text", "") : json("");
 	{
 		json extra = json::object();
@@ -423,7 +429,7 @@ json LtState::migrateLook(const json &lookIn)
 	logo["name"] = "Logo";
 	logo["enabled"] = c.contains("logo") && boolOr(c["logo"], "enabled", true);
 	logo["place"] = json{ { "row", 1 }, { "col", logoLeft ? 0 : 1 }, { "order", 0 },
-		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 }, { "pin", "auto" } };
 	{
 		json img = logo["image"];
 		img["url"] = c.contains("logo") ? strOr(c["logo"], "url", "") : json("");

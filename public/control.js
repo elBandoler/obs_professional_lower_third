@@ -635,6 +635,11 @@
     add({ type: 'subhead', label: 'PLACEMENT' });
     add({ type: 'toggle', label: 'Stretch to fill', title: 'Take up the remaining width of the row',
       get: function () { return dig(findEl(id) || {}, 'place.stretch'); }, set: function (v) { sendEl(id, 'place.stretch', v); } });
+    add({ type: 'select', label: 'Pin to edge',
+      options: [{ v: 'auto', l: 'Auto' }, { v: 'left', l: 'Far left' }, { v: 'right', l: 'Far right' }],
+      title: 'Push this element to one side of its row. Two elements sharing a row can then sit at opposite edges — e.g. one hard left, one tucked against the logo.',
+      get: function () { return dig(findEl(id) || {}, 'place.pin'); },
+      set: function (v) { sendEl(id, 'place.pin', v); } });
     add({ type: 'toggle', label: 'Full height', title: 'Span every row — e.g. a logo standing beside the whole block',
       get: function () { return dig(findEl(id) || {}, 'place.spanAll'); }, set: function (v) { sendEl(id, 'place.spanAll', v); scheduleRebuild(); } });
     add({ type: 'slider', label: 'Min width', min: 0, max: 600, step: 5, unit: 'px',

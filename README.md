@@ -118,6 +118,9 @@ Advanced sections:
   - **▲ ▼** move an element between rows, **◀ ▶** between columns, **own row** gives it a
     row to itself. Elements sharing a cell sit side by side on one line.
   - **Stretch to fill** makes an element take the remaining width of its row.
+  - **Pin to edge** pushes an element to the far left or far right of its row. Two elements
+    sharing a row can then sit at opposite ends — one hard against the left edge, the other
+    tucked against the logo — instead of packing together.
   - **Full height** makes it span every row — that is how you get a logo standing beside the
     whole block instead of a badge above it.
   - Columns are shared between rows, so an element keeps lining up with the one above it

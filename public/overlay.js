@@ -337,7 +337,13 @@
     var inFlexCol = !!(L && (L.flexCols || L.stretchCols)[e.place.col]);
     var cellKey = (e.place.spanAll ? 0 : e.place.row) + ':' + e.place.col;
     var sharesCell = !!(L && L.cells[cellKey] && L.cells[cellKey].els.length > 1);
-    var wantWidth = (e.place.stretch || (!inFlexCol && !sharesCell)) ? '100%' : '';
+    /* an auto margin eats the free space in the cell, which pins the box to
+       the opposite edge — this is what splits two elements across a row */
+    box.style.marginLeft = e.place.pin === 'right' ? 'auto' : '';
+    box.style.marginRight = e.place.pin === 'left' ? 'auto' : '';
+
+    var pinned = e.place.pin === 'left' || e.place.pin === 'right';
+    var wantWidth = (!pinned && (e.place.stretch || (!inFlexCol && !sharesCell))) ? '100%' : '';
     box.dataset.width = wantWidth;
     if (!box._widthTimer) box.style.width = wantWidth;   // never fight a running flip
     box.style.flex = e.place.stretch ? '1 1 auto' : '0 0 auto';

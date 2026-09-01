@@ -200,6 +200,9 @@ function normalizeElement(el) {
     spanAll: !!p.spanAll,
     rowSpan: Math.max(1, Math.min(20, parseInt(p.rowSpan, 10) || 1)),
     colSpan: Math.max(1, Math.min(20, parseInt(p.colSpan, 10) || 1)),
+    /* push this element to one side of its cell, so two elements sharing a
+       row can sit at opposite edges instead of packing together */
+    pin: (p.pin === 'left' || p.pin === 'right') ? p.pin : 'auto',
   };
   if (out.place.spanAll) { out.place.row = 0; out.place.rowSpan = 1; }
 

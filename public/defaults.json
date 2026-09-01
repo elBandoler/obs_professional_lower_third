@@ -7,7 +7,7 @@
       "kind": "text",
       "name": "Text",
       "enabled": true,
-      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
       "text": "New text",
       "snippets": [],
       "style": {
@@ -26,7 +26,7 @@
       "kind": "image",
       "name": "Image",
       "enabled": true,
-      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
       "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1 },
       "style": {
         "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c",
@@ -74,7 +74,7 @@
     "elements": [
       {
         "id": "el-topline", "kind": "text", "name": "Top line", "enabled": true,
-        "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+        "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
         "text": "שם הדובר – תפקיד או תיאור",
         "snippets": [],
         "style": {
@@ -91,7 +91,7 @@
       },
       {
         "id": "el-badge", "kind": "text", "name": "Badge", "enabled": true,
-        "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+        "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
         "text": "example.com/live",
         "snippets": [],
         "style": {
@@ -108,7 +108,7 @@
       },
       {
         "id": "el-headline", "kind": "text", "name": "Headline", "enabled": true,
-        "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1 },
+        "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
         "text": "כותרת לדוגמה: כך ניתן להציג טקסט ארוך יותר בתחתית המסך",
         "snippets": [],
         "style": {
@@ -125,7 +125,7 @@
       },
       {
         "id": "el-logo", "kind": "image", "name": "Logo", "enabled": true,
-        "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+        "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
         "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1 },
         "style": {
           "bg": "#ffffff", "bgOpacity": 1, "color": "#0d2b6b",
@@ -163,7 +163,7 @@
       "elements": [
         {
           "id": "el-topline", "kind": "text", "name": "Top line", "enabled": true,
-          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "שם הדובר – תפקיד או תיאור", "snippets": [],
           "style": {
             "bg": "#ffffff", "bgOpacity": 0.95, "color": "#12161c",
@@ -178,7 +178,7 @@
         },
         {
           "id": "el-badge", "kind": "text", "name": "Badge", "enabled": true,
-          "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "example.com/live", "snippets": [],
           "style": {
             "bg": "#1c56d6", "bgOpacity": 1, "color": "#ffffff",
@@ -193,7 +193,7 @@
         },
         {
           "id": "el-headline", "kind": "text", "name": "Headline", "enabled": true,
-          "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "כותרת לדוגמה: כך ניתן להציג טקסט ארוך יותר בתחתית המסך", "snippets": [],
           "style": {
             "bg": "#ffffff", "bgOpacity": 1, "color": "#0d2b6b",
@@ -208,7 +208,7 @@
         },
         {
           "id": "el-logo", "kind": "image", "name": "Logo", "enabled": true,
-          "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1 },
           "style": {
             "bg": "#ffffff", "bgOpacity": 1, "color": "#0d2b6b",
@@ -241,7 +241,7 @@
       "elements": [
         {
           "id": "el-topline", "kind": "text", "name": "Kicker", "enabled": true,
-          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "BREAKING NEWS", "snippets": [],
           "style": {
             "bg": "#111111", "bgOpacity": 1, "color": "#ffd400",
@@ -256,7 +256,7 @@
         },
         {
           "id": "el-badge", "kind": "text", "name": "Live tag", "enabled": true,
-          "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "LIVE", "snippets": [],
           "style": {
             "bg": "#ffffff", "bgOpacity": 1, "color": "#b31217",
@@ -271,7 +271,7 @@
         },
         {
           "id": "el-headline", "kind": "text", "name": "Headline", "enabled": true,
-          "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "Major story developing right now", "snippets": [],
           "style": {
             "bg": "#b31217", "bgOpacity": 1, "color": "#ffffff",
@@ -286,7 +286,7 @@
         },
         {
           "id": "el-logo", "kind": "image", "name": "Logo", "enabled": true,
-          "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 1, "col": 1, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1 },
           "style": {
             "bg": "#111111", "bgOpacity": 1, "color": "#ffffff",
@@ -319,7 +319,7 @@
       "elements": [
         {
           "id": "el-topline", "kind": "text", "name": "Role", "enabled": true,
-          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "Senior Political Analyst", "snippets": [],
           "style": {
             "bg": "#1c56d6", "bgOpacity": 1, "color": "#ffffff",
@@ -334,7 +334,7 @@
         },
         {
           "id": "el-headline", "kind": "text", "name": "Name", "enabled": true,
-          "place": { "row": 1, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 1, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "Dana Cohen", "snippets": [],
           "style": {
             "bg": "#101418", "bgOpacity": 0.88, "color": "#ffffff",
@@ -367,7 +367,7 @@
       "elements": [
         {
           "id": "el-logo", "kind": "image", "name": "Logo", "enabled": true,
-          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 0.9 },
           "style": {
             "bg": "#0e1a33", "bgOpacity": 0.96, "color": "#ffffff",
@@ -382,7 +382,7 @@
         },
         {
           "id": "el-headline", "kind": "text", "name": "Headline", "enabled": true,
-          "place": { "row": 0, "col": 1, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1 },
+          "place": { "row": 0, "col": 1, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
           "text": "Evening Headlines", "snippets": [],
           "style": {
             "bg": "#182848", "bgOpacity": 0.96, "color": "#ffffff",
