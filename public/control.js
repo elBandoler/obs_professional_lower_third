@@ -491,7 +491,7 @@
       var list = el('div', 'snip-list');
       snippetsOf(id).forEach(function (s) {
         var b = el('button', 'snip', s.label || s.text || '—');
-        b.title = 'Load this text into the preview (then press SHOW or TAKE)';
+        b.title = 'Load this wording into the preview (then press SHOW to put it on air)';
         b.addEventListener('click', function () {
           send({ type: 'snippet-load', id: id, snippetId: s.id });
         });
@@ -559,7 +559,27 @@
     var id = e.id;
     var card = el('details', 'el-card');
     card.open = !!openCards[id];
-    card.addEventListener('toggle', function () { openCards[id] = card.open; });
+    card.dataset.id = id;
+    card.addEventListener('toggle', function () {
+      openCards[id] = card.open;
+      if (card.open) {
+        /* one element at a time: with every card open the list ran to several
+           thousand pixels and nothing was findable */
+        Object.keys(openCards).forEach(function (k) { if (k !== id) openCards[k] = false; });
+        var all = document.querySelectorAll('.el-card');
+        for (var i = 0; i < all.length; i++) {
+          if (all[i] !== card) all[i].open = false;
+          all[i].classList.toggle('sel', all[i] === card);
+        }
+        selectedId = id;
+        paintHits();
+      } else if (selectedId === id) {
+        selectedId = null;
+        card.classList.remove('sel');
+        paintHits();
+      }
+    });
+    if (card.open) card.classList.add('sel');
 
     /* ---- header ---- */
     var sum = el('summary', 'el-head');
@@ -584,15 +604,42 @@
     var body = el('div', 'el-body');
     card.appendChild(body);
 
+    /* the ~26 property rows are split across tabs; CONTENT holds the thing
+       that actually changes during a show, so it is the one that opens */
+    var tabBar = el('div', 'el-tabs');
+    body.appendChild(tabBar);
+    var panes = {};
+    var TABS = [['content', 'TEXT'], ['place', 'PLACE'], ['style', 'COLOUR'], ['type', 'TYPE'], ['box', 'BOX']];
+    TABS.forEach(function (t) {
+      var b = el('button', 'el-tab', t[1]);
+      b.dataset.tab = t[0];
+      b.addEventListener('click', function () {
+        openTab[id] = t[0];
+        showTab(t[0]);
+      });
+      tabBar.appendChild(b);
+      var pane = el('div', 'el-pane');
+      pane.dataset.tab = t[0];
+      panes[t[0]] = pane;
+      body.appendChild(pane);
+    });
+    function showTab(which) {
+      Object.keys(panes).forEach(function (k) { panes[k].classList.toggle('on', k === which); });
+      var btns = tabBar.querySelectorAll('.el-tab');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.tab === which);
+    }
+
+    var pane = 'content';
     var syncs = [];
     function add(spec) {
       var r = makeRow(spec);
-      body.appendChild(r.row);
+      panes[pane].appendChild(r.row);
       syncs.push(r.sync);
     }
-    function addNode(n) { body.appendChild(n); }
+    function addNode(n) { panes[pane].appendChild(n); }
 
     /* ---- placement ---- */
+    pane = 'place';
     var move = el('div', 'el-move');
     [['▲', 'up', 'Move to the row above'],
      ['▼', 'down', 'Move to the row below'],
@@ -624,6 +671,7 @@
 
     /* no scheduleRebuild here: the card header is refreshed by syncHead(), and
        rebuilding the list would replace this input and steal focus mid-word */
+    pane = 'content';
     add({ type: 'text', label: 'Name', get: function () { return findEl(id) ? findEl(id).name : ''; },
       set: function (v) { sendEl(id, 'name', v); } });
 
@@ -643,7 +691,7 @@
         get: function () { return dig(findEl(id) || {}, 'image.scale'); }, set: function (v) { sendEl(id, 'image.scale', v); } });
     }
 
-    add({ type: 'subhead', label: 'PLACEMENT' });
+    pane = 'place';
     add({ type: 'toggle', label: 'Stretch to fill', title: 'Take up the remaining width of the row',
       get: function () { return dig(findEl(id) || {}, 'place.stretch'); }, set: function (v) { sendEl(id, 'place.stretch', v); } });
     add({ type: 'select', label: 'Pin to edge',
@@ -656,7 +704,7 @@
     add({ type: 'slider', label: 'Min width', min: 0, max: 600, step: 5, unit: 'px',
       get: function () { return dig(findEl(id) || {}, 'style.minWidth'); }, set: function (v) { sendEl(id, 'style.minWidth', v); } });
 
-    add({ type: 'subhead', label: 'COLOURS' });
+    pane = 'style';
     add({ type: 'color', label: 'Background', get: function () { return dig(findEl(id) || {}, 'style.bg'); }, set: function (v) { sendEl(id, 'style.bg', v); } });
     add({ type: 'slider', label: 'Bg opacity', min: 0, max: 1, step: 0.01, unit: '%pct',
       get: function () { return dig(findEl(id) || {}, 'style.bgOpacity'); }, set: function (v) { sendEl(id, 'style.bgOpacity', v); } });
@@ -701,7 +749,7 @@
     }
 
     if (e.kind === 'text') {
-      add({ type: 'subhead', label: 'TYPE' });
+      pane = 'type';
       add({ type: 'fontpick', label: 'Font',
         title: 'Font for this element only. Leave empty to follow the default font set under FONTS.',
         get: function () { return dig(findEl(id) || {}, 'style.fontFamily'); },
@@ -720,7 +768,7 @@
         get: function () { return dig(findEl(id) || {}, 'style.nowrap'); }, set: function (v) { sendEl(id, 'style.nowrap', v); } });
     }
 
-    add({ type: 'subhead', label: 'BOX' });
+    pane = 'box';
     add({ type: 'slider', label: 'Pad horizontal', min: 0, max: 90, step: 1, unit: 'px',
       get: function () { return dig(findEl(id) || {}, 'style.padX'); }, set: function (v) { sendEl(id, 'style.padX', v); } });
     add({ type: 'slider', label: 'Pad vertical', min: 0, max: 70, step: 1, unit: 'px',
@@ -743,6 +791,8 @@
         get: function () { return dig(findEl(id) || {}, 'style.accent.thickness'); }, set: function (v) { sendEl(id, 'style.accent.thickness', v); } });
     }
 
+    showTab(openTab[id] || 'content');
+
     function syncHead() {
       var cur = findEl(id);
       if (!cur) return;
@@ -760,6 +810,8 @@
   }
 
   var openCards = {};
+  var openTab = {};
+  var selectedId = null;
 
   function renderElements(force) {
     var host = $('#el-list');
@@ -871,7 +923,7 @@
     { sec: 'edges', type: 'slider', label: 'Slant amount', min: 0, max: 80, step: 1, unit: 'px', get: g('style.edges.chamfer'), set: s('style.edges.chamfer') },
     { sec: 'edges', type: 'slider', label: 'Shadow', min: 0, max: 100, step: 1, get: g('style.shadow'), set: s('style.shadow') },
 
-    { sec: 'anim', type: 'toggle', label: 'Enable animations', title: 'Off = TAKE / OBS Transition applies changes instantly', get: g('anim.enabled'), set: s('anim.enabled') },
+    { sec: 'anim', type: 'toggle', label: 'Enable animations', title: 'Off = changes appear instantly, with no motion', get: g('anim.enabled'), set: s('anim.enabled') },
     { sec: 'anim', type: 'select', label: 'In animation', options: A_STYLES, get: g('anim.inStyle'), set: s('anim.inStyle') },
     { sec: 'anim', type: 'select', label: 'Out animation', options: [{ v: 'auto', l: 'Auto (reverse in)' }].concat(A_STYLES), get: g('anim.outStyle'), set: s('anim.outStyle') },
     { sec: 'anim', type: 'select', label: 'Text change', options: [{ v: 'slide-swap', l: 'Slide swap' }, { v: 'crossfade', l: 'Crossfade' }, { v: 'instant', l: 'Instant' }], get: g('anim.changeStyle'), set: s('anim.changeStyle') },
@@ -887,9 +939,9 @@
     { sec: 'obs', type: 'number', label: 'Port', lazy: true, showIf: function () { return !NATIVE; }, get: g('settings.obs.port'), set: s('settings.obs.port') },
     { sec: 'obs', type: 'password', label: 'Password', lazy: true, showIf: function () { return !NATIVE; }, get: g('settings.obs.password'), set: s('settings.obs.password') },
     { sec: 'obs', type: 'number', label: 'Server port', lazy: true, title: 'Applied the next time OBS starts', showIf: function () { return NATIVE; }, get: g('settings.server.port'), set: s('settings.server.port') },
-    { sec: 'obs', type: 'toggle', label: 'TAKE on Transition', get: g('settings.obs.commitOnTransition'), set: s('settings.obs.commitOnTransition') },
+    { sec: 'obs', type: 'toggle', label: 'Update on Transition', get: g('settings.obs.commitOnTransition'), set: s('settings.obs.commitOnTransition') },
     { sec: 'obs', type: 'toggle', label: 'Only in Studio Mode', get: g('settings.obs.onlyStudioMode'), set: s('settings.obs.onlyStudioMode') },
-    { sec: 'obs', type: 'select', label: 'Transition does', options: [{ v: 'take', l: 'Commit changes' }, { v: 'take-show', l: 'Commit + show if hidden' }], get: g('settings.obs.transitionAction'), set: s('settings.obs.transitionAction') },
+    { sec: 'obs', type: 'select', label: 'Transition does', options: [{ v: 'take', l: 'Update what is on air' }, { v: 'take-show', l: 'Update, and show if hidden' }], get: g('settings.obs.transitionAction'), set: s('settings.obs.transitionAction') },
   ];
 
   var SECTIONS = [
@@ -934,7 +986,7 @@
 
   function buildSimpleUi() {
     var body = $('#sec-body-simple');
-    body.appendChild(el('div', 'hint', 'Tap a preset to load it, edit the text, then press SHOW or TAKE.'));
+    body.appendChild(el('div', 'hint', 'Tap a preset to load it, edit the text, then press SHOW to put it on air.'));
     var grid = el('div', null);
     grid.id = 'quick-grid';
     body.appendChild(grid);
@@ -1085,7 +1137,7 @@
       }
       S.presets.forEach(function (p) {
         var b = el('button', 'quick-preset', p.name);
-        b.title = 'Load "' + p.name + '" into the preview — then TAKE or SHOW';
+        b.title = 'Load "' + p.name + '" into the preview — then press SHOW';
         b.addEventListener('click', function () { send({ type: 'preset-load', id: p.id }); });
         qg.appendChild(b);
       });
@@ -1098,7 +1150,7 @@
     S.presets.forEach(function (p) {
       var row = el('div', 'preset-row');
       var load = el('button', 'preset-load', p.name);
-      load.title = 'Load into preview (press TAKE or SHOW to put it on air)';
+      load.title = 'Load into the preview (press SHOW to put it on air)';
       load.addEventListener('click', function () { send({ type: 'preset-load', id: p.id }); });
       var upd = el('button', 'preset-mini', '⤓');
       upd.title = 'Overwrite this preset with the current look';
@@ -1127,7 +1179,7 @@
     body.appendChild(el('div', 'subhead', 'URLS & API'));
     [
       { l: 'Program overlay (browser source)', u: location.origin + '/overlay' },
-      { l: 'Preview mirror', u: location.origin + '/overlay?role=preview' },
+      { l: 'Big preview — open in a BROWSER window, never as an OBS source', u: location.origin + '/overlay?role=preview' },
       { l: 'Control panel', u: location.origin + '/control' },
       { l: 'Hotkey: take', u: location.origin + '/api/take' },
       { l: 'Hotkey: show', u: location.origin + '/api/show' },
@@ -1158,7 +1210,7 @@
       return 'Running inside OBS (native plugin) — the Transition button commits pending changes automatically' +
         (obsStatus.studioMode ? '. Studio Mode is ON.' : '. Enable Studio Mode in OBS to use the preview/transition workflow.');
     }
-    if (st === 'off') return 'Enable to let the OBS “Transition” button TAKE your changes. In OBS: Tools → WebSocket Server Settings → Enable, then copy the password here.';
+    if (st === 'off') return 'Enable to let the OBS “Transition” button put your pending changes on air. In OBS: Tools → WebSocket Server Settings → Enable, then copy the password here.';
     if (st === 'connected') return 'Connected to OBS' + (obsStatus.studioMode ? ' — Studio Mode is ON.' : ' — Studio Mode is OFF.');
     if (st === 'connecting') return 'Connecting to OBS…';
     if (st === 'auth-failed') return 'OBS refused the connection — wrong or missing password.';
@@ -1186,6 +1238,7 @@
     var onair = $('#pill-onair');
     onair.textContent = S.visible ? 'ON AIR' : 'HIDDEN';
     onair.className = 'pill' + (S.visible ? ' onair' : '');
+    document.body.classList.toggle('onair', !!S.visible);
 
     var pgm = $('#pill-pgm');
     pgm.textContent = 'PGM ' + (counts.program > 0 ? '✓' : '0');
@@ -1206,7 +1259,16 @@
 
     var hint = $('#obs-hint');
     if (hint) hint.textContent = obsHintText();
-    $('#btn-take').textContent = S.anim.enabled ? 'TAKE' : 'TAKE (cut)';
+
+    /* say what SHOW will do right now, so it is never a guess */
+    var show = $('#btn-show');
+    show.textContent = S.visible ? (dirty ? 'UPDATE' : 'SHOW') : 'SHOW';
+    show.title = S.visible
+      ? (dirty ? 'Put these changes on air' : 'Replay the lower third on air')
+      : 'Put what you see in the preview on air';
+
+    var note = $('#dirty-note');
+    if (note) note.textContent = dirty ? 'not on air yet' : '';
   }
 
   setInterval(function () {
@@ -1222,14 +1284,79 @@
 
   /* ---------------------------------------------------------- preview */
 
+  var previewScale = 1;
   function fitPreview() {
     var box = $('#preview-box');
     var frame = $('#preview-frame');
     if (!box || !frame) return;
-    frame.style.transform = 'scale(' + (box.clientWidth / 1920) + ')';
+    previewScale = box.clientWidth / 1920;
+    frame.style.transform = 'scale(' + previewScale + ')';
+    paintHits();
   }
   if (window.ResizeObserver) new ResizeObserver(fitPreview).observe(document.body);
   window.addEventListener('resize', fitPreview);
+
+  /* ---- the preview is the selection surface --------------------------
+     The iframe stays pointer-events:none; we lay transparent buttons over it,
+     positioned from the boxes the overlay actually drew. Clicking a bar in the
+     picture opens that element's controls — previously nothing connected the
+     two, and on a busy layout you had to guess which card drew which bar. */
+  function selectElement(id, scroll) {
+    var card = document.querySelector('.el-card[data-id="' + id + '"]');
+    if (!card) return;
+    var sec = $('#sec-elements');
+    if (sec && !sec.open) sec.open = true;
+    card.open = true;                       // the toggle handler closes the rest
+    if (scroll && card.scrollIntoView) {
+      card.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function paintHits() {
+    var host = $('#preview-hit');
+    var frame = $('#preview-frame');
+    if (!host || !frame) return;
+    var doc = null;
+    try { doc = frame.contentDocument; } catch (err) { doc = null; }
+    if (!doc) { host.innerHTML = ''; return; }
+    var boxes = doc.querySelectorAll('#lt .box[data-id]');
+    if (!boxes.length) { host.innerHTML = ''; return; }
+
+    host.innerHTML = '';
+    for (var i = 0; i < boxes.length; i++) {
+      (function (b) {
+        var r = b.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        var id = b.dataset.id;
+        var hit = el('button', 'hit' + (id === selectedId ? ' sel' : ''));
+        hit.style.left = (r.left * previewScale) + 'px';
+        hit.style.top = (r.top * previewScale) + 'px';
+        hit.style.width = (r.width * previewScale) + 'px';
+        hit.style.height = (r.height * previewScale) + 'px';
+        var e = findEl(id);
+        hit.title = 'Edit ' + ((e && e.name) || 'this element');
+        hit.addEventListener('click', function () { selectElement(id, true); });
+        host.appendChild(hit);
+      })(boxes[i]);
+    }
+  }
+
+  /* the preview redraws on every pending change; keep the hit areas on top of
+     it without polling hard. The cockpit size is re-derived here too: a scroll
+     event does not fire when the position did not change, so a class set while
+     scrolled down could otherwise stay stuck after the content shrank. */
+  setInterval(function () {
+    paintHits();
+    updateCockpit();
+  }, 700);
+
+  /* ---- shrink the cockpit once the operator scrolls into the controls ---- */
+  function updateCockpit() {
+    var compact = window.scrollY > 40;
+    document.body.classList.toggle('cockpit-compact', compact);
+  }
+  window.addEventListener('scroll', updateCockpit, { passive: true });
+  updateCockpit();
 
   document.querySelectorAll('.pv-bg').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -1243,7 +1370,9 @@
 
   /* ----------------------------------------------------------- wiring */
 
-  $('#btn-take').addEventListener('click', function () { send({ type: 'take' }); });
+  /* SHOW is the only way on air. The server's show already commits the edits
+     AND animates: an animated swap when a lower third is already up, an
+     animate-in when it is not. There is nothing left for a separate TAKE. */
   $('#btn-show').addEventListener('click', function () { send({ type: 'show' }); });
   $('#btn-hide').addEventListener('click', function () { send({ type: 'hide' }); });
   $('#btn-revert').addEventListener('click', function () { send({ type: 'revert' }); });
@@ -1305,7 +1434,7 @@
   });
   applyMode();
 
-  $('#foot-note').textContent = 'obs-lower-thirds · edit in preview, TAKE (or OBS Transition) to air';
+  $('#foot-note').textContent = 'obs-lower-thirds · edit here, watch the preview, press SHOW';
 
   /* -------------------------------------------------------------- ws */
 

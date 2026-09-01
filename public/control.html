@@ -8,45 +8,56 @@
 </head>
 <body>
 
-<div id="offline-banner">Server connection lost — reconnecting…</div>
+<!-- Everything you need to run the show stays pinned to the top: the preview
+     is the only preview that exists (OBS cannot show a pending version), so it
+     must never scroll out of reach of the buttons that put it on air. -->
+<div id="cockpit">
 
-<header id="topbar">
-  <div class="title">LOWER <b>THIRDS</b></div>
-  <button id="mode-toggle" title="Switch between the full editor and a simplified operator view (quick presets + text editing only)">SIMPLE</button>
-  <div class="pills">
-    <span id="pill-onair" class="pill">HIDDEN</span>
-    <span id="pill-pgm" class="pill" title="Program overlay browser sources connected">PGM 0</span>
-    <span id="pill-obs" class="pill" title="obs-websocket status">OBS off</span>
-  </div>
-</header>
+  <div id="offline-banner">Server connection lost — reconnecting…</div>
 
-<section id="preview-wrap">
-  <div id="preview-box">
-    <iframe id="preview-frame" src="/overlay?role=preview&label=off&bg=checker" scrolling="no"></iframe>
-    <div id="preview-tag">PREVIEW</div>
-  </div>
-  <div id="preview-tools">
-    <span class="pv-label">BG</span>
-    <button class="pv-bg" data-bg="checker" title="Checkerboard">▦</button>
-    <button class="pv-bg" data-bg="black" title="Black">■</button>
-    <button class="pv-bg" data-bg="white" title="Light">□</button>
-    <button class="pv-bg" data-bg="green" title="Green">▩</button>
-    <span class="spacer"></span>
-    <button id="btn-preview-anim" title="Replay the intro animation in the preview only">▶ test animation</button>
-  </div>
-</section>
+  <header id="topbar">
+    <div class="title">LOWER <b>THIRDS</b></div>
+    <button id="mode-toggle" title="Switch between the full editor and a simplified operator view (quick presets + text editing only)">SIMPLE</button>
+    <div class="pills">
+      <span id="pill-onair" class="pill">HIDDEN</span>
+      <span id="pill-pgm" class="pill" title="Program overlay sources connected">PGM 0</span>
+      <span id="pill-obs" class="pill" title="OBS connection">OBS off</span>
+    </div>
+  </header>
 
-<section id="actions">
-  <button id="btn-show" title="Commit pending changes and animate the lower third IN">SHOW</button>
-  <button id="btn-take" title="Commit pending changes to program (animated unless animations are off)">TAKE</button>
-  <button id="btn-hide" title="Animate the lower third OUT">HIDE</button>
-</section>
-<section id="actions-sub">
-  <button id="btn-revert" title="Discard pending changes, back to what is on program">↺ discard changes</button>
-  <label id="anim-chip" title="Master animation switch. Off = TAKE / Transition applies changes instantly.">
-    <input type="checkbox" id="anim-master"> animations
-  </label>
-</section>
+  <div id="cockpit-main">
+    <section id="preview-wrap">
+      <div id="preview-box">
+        <iframe id="preview-frame" src="/overlay?role=preview&label=off&bg=checker" scrolling="no"></iframe>
+        <div id="preview-hit"></div>
+        <div id="preview-tag">PREVIEW</div>
+      </div>
+      <div id="preview-tools">
+        <span class="pv-label">BG</span>
+        <button class="pv-bg" data-bg="checker" title="Checkerboard">▦</button>
+        <button class="pv-bg" data-bg="black" title="Black">■</button>
+        <button class="pv-bg" data-bg="white" title="Light">□</button>
+        <button class="pv-bg" data-bg="green" title="Green">▩</button>
+        <span class="spacer"></span>
+        <button id="btn-preview-anim" title="Replay the intro animation in the preview only">▶ test animation</button>
+      </div>
+    </section>
+
+    <div id="actions-col">
+      <section id="actions">
+        <button id="btn-show" title="Put what you see in the preview on air">SHOW</button>
+        <button id="btn-hide" title="Animate the lower third off air">HIDE</button>
+      </section>
+      <section id="actions-sub">
+        <button id="btn-revert" title="Throw away your edits and go back to what is on air">↺ discard</button>
+        <span id="dirty-note"></span>
+        <label id="anim-chip" title="Master animation switch. Off = changes appear instantly, with no motion.">
+          <input type="checkbox" id="anim-master"> animations
+        </label>
+      </section>
+    </div>
+  </div>
+</div>
 
 <main id="sections"></main>
 

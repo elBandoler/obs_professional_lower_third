@@ -52,6 +52,50 @@ input[type="color"] {
   background: #131417;
 }
 
+/* ------------------------------------------------------------ cockpit */
+
+/* The preview and the on-air buttons never leave the screen. Editing an
+   element used to scroll both away, so you could not see what you were
+   changing nor reach the button that puts it on air. */
+#cockpit {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--bg);
+  box-shadow: 0 10px 16px -12px #000;
+}
+#cockpit-main { padding-bottom: 2px; }
+
+/* once you scroll down to the controls the preview steps aside for the
+   buttons, so the whole cockpit costs about a third of what it did */
+body.cockpit-compact #cockpit-main {
+  display: grid;
+  grid-template-columns: 152px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 0 10px 4px 10px;
+}
+body.cockpit-compact #preview-wrap { padding: 0; }
+body.cockpit-compact #preview-tools { display: none; }
+body.cockpit-compact #actions { padding: 0; gap: 6px; }
+body.cockpit-compact #actions button { font-size: 12px; padding: 9px 4px; }
+body.cockpit-compact #actions-sub { padding: 4px 0 0 0; }
+body.cockpit-compact #topbar { padding-bottom: 4px; }
+@media (max-width: 340px) {
+  body.cockpit-compact #cockpit-main { grid-template-columns: 1fr; }
+}
+
+/* a red rail down the edge of the whole dock whenever something is on air */
+body.onair::before {
+  content: "";
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--red);
+  z-index: 60;
+  pointer-events: none;
+}
+
 /* ------------------------------------------------------------- banner */
 
 #offline-banner {
@@ -122,6 +166,20 @@ body.dirty #preview-box { border-color: var(--amber); }
   transform-origin: 0 0;
   pointer-events: none;
 }
+/* transparent hit areas over each bar, so clicking the picture opens that
+   element's controls. The iframe itself stays pointer-events:none. */
+#preview-hit { position: absolute; inset: 0; }
+#preview-hit .hit {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+}
+#preview-hit .hit:hover { border-color: rgba(122, 170, 255, 0.9); background: rgba(74, 125, 224, 0.14); }
+#preview-hit .hit.sel { border-color: var(--blue); background: rgba(74, 125, 224, 0.1); }
+
 #preview-tag {
   position: absolute;
   top: 6px; right: 6px;
@@ -163,15 +221,14 @@ body.dirty #preview-tag { color: var(--amber); border-color: rgba(224, 166, 60, 
   padding: 12px 4px;
   border-radius: 8px;
 }
-#btn-show { background: #234a2c; border-color: #2f6039; }
+#btn-show { background: #234a2c; border-color: #2f6039; flex: 2; }
 #btn-show:hover { background: #2a5834; }
 #btn-hide { background: #3a3b41; }
-#btn-take { background: #58262a; border-color: #713036; }
-#btn-take:hover { background: #692d32; }
-body.dirty #btn-take {
-  background: var(--red);
-  border-color: #e0554f;
-  box-shadow: 0 0 0 1px rgba(224, 85, 79, 0.35), 0 0 14px rgba(224, 85, 79, 0.45);
+/* edits are not on air until SHOW is pressed, so SHOW is what lights up */
+body.dirty #btn-show {
+  background: var(--green);
+  border-color: #56c46e;
+  box-shadow: 0 0 0 1px rgba(86, 196, 110, 0.35), 0 0 14px rgba(86, 196, 110, 0.4);
 }
 
 #actions-sub {
@@ -181,6 +238,16 @@ body.dirty #btn-take {
   gap: 8px;
   padding: 6px 10px 10px 10px;
 }
+#dirty-note {
+  font-size: 11px;
+  color: var(--amber);
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body:not(.dirty) #dirty-note { visibility: hidden; }
 #btn-revert {
   font-size: 11px;
   color: var(--dim);
@@ -393,6 +460,31 @@ details.el-card[open] { border-color: #454852; }
 
 .el-add { display: flex; gap: 6px; margin-top: 8px; }
 .el-add button { flex: 1; font-size: 12px; padding: 7px; }
+
+/* tabs inside an element card: one group of properties at a time, so a card
+   is a couple of hundred pixels instead of taller than the whole dock */
+.el-tabs {
+  display: flex;
+  gap: 3px;
+  margin: 2px 0 4px 0;
+  flex-wrap: wrap;
+}
+.el-tab {
+  flex: 1;
+  min-width: 52px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 5px 4px;
+  color: var(--dim);
+  background: #131417;
+}
+.el-tab.on { color: var(--text); background: #2f3742; border-color: #45505f; }
+.el-pane { display: none; flex-direction: column; gap: 7px; }
+.el-pane.on { display: flex; }
+
+.el-card.sel { border-color: var(--blue); }
+.el-card.sel > .el-head { background: #223052; }
 
 /* ---------------------------------------------------- gradient editor */
 

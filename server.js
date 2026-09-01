@@ -1277,7 +1277,7 @@ server.listen(PORT, HOST, () => {
   console.log('  Overlay (OBS browser source, 1920x1080):');
   console.log('      http://' + HOST + ':' + PORT + '/overlay');
   console.log('');
-  console.log('  Preview mirror (optional second source / projector):');
+  console.log('  Big preview (open in a browser window, NOT as an OBS source):');
   console.log('      http://' + HOST + ':' + PORT + '/overlay?role=preview');
   console.log('');
   console.log('  Data folder: ' + DATA_DIR);

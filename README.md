@@ -80,8 +80,8 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
 
 ## 3. The preview / program workflow
 
-- Everything you type or restyle goes to the **pending** state. The dock's preview pane (and
-  any `?role=preview` source) shows it immediately. **The program overlay does not change.**
+- Everything you type or restyle goes to the **pending** state. **The dock's preview pane is
+  the preview** — it shows the change immediately, and the program overlay does not move.
 - **TAKE** (dock button, or OBS **Transition**, or `/api/take`) commits pending → program:
   - text lines swap with an animation, colors/sizes/positions morph smoothly,
   - structural changes (an element added/removed/moved) do a quick out-and-in,
@@ -90,14 +90,20 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
 - **SHOW** commits pending and animates the lower third in; **HIDE** animates it out.
 - **discard changes** reverts pending back to what's on air.
 
-**Why the OBS Preview window itself can't show the pending text:** OBS renders one browser
-source instance and paints the *same* pixels into Preview and Program — no source can display
-two different things at once. That's why the control dock has its own preview pane, and why
-there is a separate **preview mirror** URL (`/overlay?role=preview`) you can use as:
-- a source in a scene that never goes to program (e.g. a "GFX PREVIEW" scene), or
-- a *Windowed Projector*: right-click the source → Windowed Projector.
+**OBS's own Preview cannot show the pending version.** A source renders once and the same
+pixels are painted into both Preview and Program — OBS has no concept of a source that exists
+only in the Preview view. So there is no way to see "what is about to go on air" inside OBS's
+Preview pane, for this or any other source.
 
-Never put the `role=preview` source in a scene that goes live — it always shows pending edits.
+That is why **the preview lives in the dock**, right above the SHOW / TAKE / HIDE buttons. It
+is a real render of the pending look and it can never reach air.
+
+If you want it bigger, open `http://127.0.0.1:3620/overlay?role=preview` **in an ordinary
+browser window** — on a second monitor, for example. A browser window is outside OBS, so it
+cannot be transitioned to program by accident.
+
+Do **not** add `?role=preview` as a source in an OBS scene. Any scene can be transitioned to
+program, and that source always shows your unfinished edits — it is a trap, not a preview.
 
 ## 4. Options overview
 
