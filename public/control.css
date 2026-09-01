@@ -57,13 +57,27 @@ input[type="color"] {
 /* The preview and the on-air buttons never leave the screen. Editing an
    element used to scroll both away, so you could not see what you were
    changing nor reach the button that puts it on air. */
+/* Fixed, not sticky. position:sticky depends on the engine picking the right
+   scrolling ancestor, and the browser embedded in OBS does not always agree
+   with a normal browser about which that is — the header jumped and overlapped
+   the controls. Fixed needs no such agreement; the space it occupies is given
+   back as padding-top on the body, kept in sync from JS. */
 #cockpit {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 30;
   background: var(--bg);
   box-shadow: 0 10px 16px -12px #000;
 }
+/* on a dock too short to hold the cockpit at all, let it scroll normally so
+   nothing becomes unreachable */
+body.cockpit-static #cockpit {
+  position: static;
+  box-shadow: none;
+}
+body.cockpit-static { padding-top: 0 !important; }
 #cockpit-main { padding-bottom: 2px; }
 
 /* once you scroll down to the controls the preview steps aside for the

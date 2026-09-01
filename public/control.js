@@ -1357,8 +1357,27 @@
   function updateCockpit() {
     var compact = window.innerHeight < 620 || window.scrollY > 40;
     document.body.classList.toggle('cockpit-compact', compact);
+
+    var ck = $('#cockpit');
+    if (!ck) return;
+    var h = Math.round(ck.getBoundingClientRect().height);
+
+    /* if the cockpit cannot fit in the dock at all, stop pinning it: better a
+       scrolling header than controls no one can reach */
+    var tooTall = h > window.innerHeight - 80;
+    document.body.classList.toggle('cockpit-static', tooTall);
+
+    /* the cockpit is out of flow, so hand its height back as padding */
+    var want = tooTall ? '' : (h + 'px');
+    if (document.body.style.paddingTop !== want) document.body.style.paddingTop = want;
   }
   window.addEventListener('resize', updateCockpit);
+  /* the cockpit changes height when it compacts, when the dock is resized and
+     when the status pills wrap — keep the spacer honest */
+  if (window.ResizeObserver) {
+    var ckEl = $('#cockpit');
+    if (ckEl) new ResizeObserver(updateCockpit).observe(ckEl);
+  }
   window.addEventListener('scroll', updateCockpit, { passive: true });
   updateCockpit();
 
