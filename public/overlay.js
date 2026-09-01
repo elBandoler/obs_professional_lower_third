@@ -1,6 +1,11 @@
-/* OBS Lower Thirds — overlay renderer.
+/* OBS Lower Thirds — overlay renderer (dynamic element model, schema 2).
  * role=program  -> renders the LIVE state, animates on TAKE / SHOW / HIDE
  * role=preview  -> mirrors the PENDING state instantly (this is the preview)
+ *
+ * Layout: a CSS grid of rows x auto-derived columns. Every element declares
+ * place{row, order, stretch, rowSpan}; the column index is its order within
+ * the row, so elements at the same order line up vertically across rows
+ * (that is what keeps a badge sitting exactly above a logo).
  */
 (function () {
   'use strict';
@@ -20,6 +25,8 @@
   var current = null;   // look currently displayed
   var isShown = false;  // program visibility
   var animTimer = null;
+  var grid = null;      // the .lt-grid node
+  var nodes = {};       // element id -> { cell, box, line, txt, img }
 
   var EASINGS = {
     smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -28,30 +35,9 @@
     linear: 'linear',
   };
 
-  /* ------------------------------------------------------------ skeleton */
-
-  lt.innerHTML =
-    '<div class="lt-grid">' +
-      '<div class="topline-cell"><div class="bar topline anim-el" style="--i:1.4">' +
-        '<span class="txt"><span class="line" dir="auto"></span></span></div></div>' +
-      '<div class="badge-cell"><div class="badge anim-el" style="--i:2">' +
-        '<span class="txt"><span class="line" dir="auto"></span></span></div></div>' +
-      '<div class="headline-cell"><div class="bar headline anim-el" style="--i:0.7">' +
-        '<span class="txt"><span class="line" dir="auto"></span></span></div></div>' +
-      '<div class="logo-cell"><div class="logobox anim-el" style="--i:0"><img alt=""></div></div>' +
-    '</div>';
-
-  var el = {
-    topline: lt.querySelector('.bar.topline'),
-    headline: lt.querySelector('.bar.headline'),
-    badge: lt.querySelector('.badge'),
-    logobox: lt.querySelector('.logobox'),
-    logoImg: lt.querySelector('.logobox img'),
-  };
-
   /* --------------------------------------------------------------- utils */
 
-  function hexToRgba(hex, op) {
+  function rgba(hex, op) {
     if (typeof hex !== 'string') return 'rgba(0,0,0,1)';
     var h = hex.replace('#', '');
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
@@ -62,13 +48,64 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
-  var RTL_RE = /[֐-ࣿיִ-﷽ﹰ-ﻼ]/;
+  function safeUrl(u) { return String(u || '').replace(/["\\)]/g, ''); }
+
+  var RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+  function visibleElements(look) {
+    return (look.elements || []).filter(function (e) { return e && e.enabled !== false; });
+  }
   function resolveDir(look) {
     var d = look.style.direction;
     if (d === 'rtl' || d === 'ltr') return d;
-    var probe = (look.content.headline.text || '') + (look.content.topline.text || '');
+    var probe = visibleElements(look).map(function (e) {
+      return e.kind === 'text' ? (e.text || '') : '';
+    }).join(' ');
     return RTL_RE.test(probe) ? 'rtl' : 'ltr';
   }
+
+  /* ------------------------------------------------------- gradients/bg */
+
+  function stopsCss(stops, mul) {
+    return stops.slice().sort(function (a, b) { return (a.pos || 0) - (b.pos || 0); })
+      .map(function (s) {
+        var op = (s.opacity === undefined ? 1 : s.opacity) * (mul === undefined ? 1 : mul);
+        return rgba(s.color, op) + ' ' + (s.pos || 0) + '%';
+      }).join(', ');
+  }
+
+  function cssGradient(g, mul) {
+    var s = stopsCss(g.stops || [], mul);
+    if (g.type === 'radial') {
+      return 'radial-gradient(' + (g.shape === 'circle' ? 'circle' : 'ellipse') +
+        ' at ' + (g.posX || 0) + '% ' + (g.posY || 0) + '%, ' + s + ')';
+    }
+    if (g.type === 'conic') {
+      return 'conic-gradient(from ' + (g.angle || 0) + 'deg at ' +
+        (g.posX || 0) + '% ' + (g.posY || 0) + '%, ' + s + ')';
+    }
+    return 'linear-gradient(' + (g.angle === undefined ? 180 : g.angle) + 'deg, ' + s + ')';
+  }
+
+  function boxBackground(st) {
+    var img = st.bgImage;
+    var hasImg = !!(img && img.enabled && img.url);
+    var tint;
+    if (st.gradient && st.gradient.enabled) {
+      tint = cssGradient(st.gradient, st.bgOpacity);
+    } else {
+      var c = rgba(st.bg, st.bgOpacity);
+      tint = hasImg ? 'linear-gradient(' + c + ', ' + c + ')' : c;
+    }
+    if (!hasImg) return tint;
+    var fit = img.fit || 'cover';
+    var layout = fit === 'contain' ? 'center / contain no-repeat'
+      : fit === 'stretch' ? 'center / 100% 100% no-repeat'
+      : fit === 'tile' ? 'top left / auto repeat'
+      : 'center / cover no-repeat';
+    return tint + ', url("' + safeUrl(img.url) + '") ' + layout;
+  }
+
+  /* ---------------------------------------------------------------- fonts */
 
   var fontLink = null;
   function ensureFontCss(url) {
@@ -81,42 +118,6 @@
     fontLink.href = href;
     fontLink.dataset.href = href;
     document.head.appendChild(fontLink);
-  }
-
-  /* ---------------------------------------------------------------- vars */
-
-  function setAnimVars(a) {
-    var s = stage.style;
-    s.setProperty('--in-ms', a.inMs + 'ms');
-    s.setProperty('--out-ms', a.outMs + 'ms');
-    s.setProperty('--change-ms', a.changeMs + 'ms');
-    s.setProperty('--stagger', a.staggerMs + 'ms');
-    s.setProperty('--ease', EASINGS[a.easing] || EASINGS.snappy);
-    s.setProperty('--n', 3);
-  }
-
-  function barBg(cfg) {
-    var base = hexToRgba(cfg.bg, cfg.bgOpacity);
-    var tint = base;
-    if (cfg.gradient && cfg.gradient.enabled) {
-      tint = 'linear-gradient(' + (cfg.gradient.angle || 180) + 'deg, ' +
-        base + ', ' + hexToRgba(cfg.gradient.color2, cfg.bgOpacity) + ')';
-    }
-    var img = cfg.image;
-    if (img && img.enabled && img.url) {
-      /* color/gradient acts as a tint layer above the picture */
-      var tintLayer = (cfg.gradient && cfg.gradient.enabled)
-        ? tint
-        : 'linear-gradient(' + base + ', ' + base + ')';
-      var fit = img.fit || 'cover';
-      var layout = 'center / cover no-repeat';
-      if (fit === 'contain') layout = 'center / contain no-repeat';
-      else if (fit === 'stretch') layout = 'center / 100% 100% no-repeat';
-      else if (fit === 'tile') layout = 'top left / auto repeat';
-      var url = String(img.url).replace(/["\\)]/g, '');
-      return tintLayer + ', url("' + url + '") ' + layout;
-    }
-    return tint;
   }
 
   var upFontsEl = null;
@@ -132,25 +133,29 @@
     }
     upFontsEl.textContent = arr.map(function (f) {
       if (!f || !f.url || !f.name) return '';
-      var fam = String(f.name).replace(/["\\]/g, '');
-      var url = String(f.url).replace(/["\\)]/g, '');
-      return '@font-face{font-family:"' + fam + '";src:url("' + url + '");font-display:swap;}';
+      return '@font-face{font-family:"' + String(f.name).replace(/["\\]/g, '') +
+        '";src:url("' + safeUrl(f.url) + '");font-display:swap;}';
     }).join('\n');
   }
 
-  function setVars(look) {
-    var st = look.style, c = look.content, s = stage.style;
-    var hl = st.bars.headline, tl = st.bars.topline, bd = st.bars.badge, lb = st.bars.logoBox;
+  /* ------------------------------------------------------------ stage vars */
 
+  function setAnimVars(a) {
+    var s = stage.style;
+    s.setProperty('--in-ms', a.inMs + 'ms');
+    s.setProperty('--out-ms', a.outMs + 'ms');
+    s.setProperty('--change-ms', a.changeMs + 'ms');
+    s.setProperty('--stagger', a.staggerMs + 'ms');
+    s.setProperty('--ease', EASINGS[a.easing] || EASINGS.snappy);
+  }
+
+  function setStageVars(look) {
+    var st = look.style, s = stage.style;
     s.setProperty('--font', st.font.family || 'sans-serif');
     s.setProperty('--margin-side', st.layout.sideMargin + 'px');
     s.setProperty('--margin-bottom', st.layout.bottomMargin + 'px');
     s.setProperty('--maxw', st.layout.maxWidth + '%');
     s.setProperty('--gap', st.gap + 'px');
-    s.setProperty('--radius', st.edges.radius + 'px');
-    s.setProperty('--chamfer', st.edges.chamfer + 'px');
-    s.setProperty('--accent-color', st.accent.color);
-    s.setProperty('--accent-h', st.accent.thickness + 'px');
     s.setProperty('--talign', st.textAlign || 'start');
 
     var sh = Math.max(0, Math.min(100, st.shadow || 0));
@@ -158,61 +163,202 @@
       : 'drop-shadow(0 ' + (3 + sh * 0.09).toFixed(1) + 'px ' + (sh * 0.45).toFixed(1) +
         'px rgba(0,0,0,' + (0.12 + sh * 0.005).toFixed(3) + '))');
 
-    s.setProperty('--hl-bg', barBg(hl));
-    s.setProperty('--hl-color', hl.color);
-    s.setProperty('--hl-size', hl.size + 'px');
-    s.setProperty('--hl-weight', hl.weight);
-    s.setProperty('--hl-ls', hl.letterSpacing + 'px');
-    s.setProperty('--hl-padx', hl.padX + 'px');
-    s.setProperty('--hl-pady', hl.padY + 'px');
-
-    s.setProperty('--tl-bg', barBg(tl));
-    s.setProperty('--tl-color', tl.color);
-    s.setProperty('--tl-size', tl.size + 'px');
-    s.setProperty('--tl-weight', tl.weight);
-    s.setProperty('--tl-ls', tl.letterSpacing + 'px');
-    s.setProperty('--tl-padx', tl.padX + 'px');
-    s.setProperty('--tl-pady', tl.padY + 'px');
-
-    s.setProperty('--badge-bg', bd.bg);
-    s.setProperty('--badge-color', bd.color);
-    s.setProperty('--badge-size', bd.size + 'px');
-    s.setProperty('--badge-weight', bd.weight);
-
-    s.setProperty('--logo-bg', hexToRgba(lb.bg, lb.bgOpacity));
-    s.setProperty('--logo-pad', lb.pad + 'px');
-    s.setProperty('--logo-minw', lb.minWidth + 'px');
-    s.setProperty('--logo-scale', c.logo.scale || 1);
-    // logo image height ~ inner height of the headline bar
-    var logoH = Math.max(24, hl.size * 1.18 + hl.padY * 2 - lb.pad * 2);
-    s.setProperty('--logo-h', logoH.toFixed(0) + 'px');
-
     ensureFontCss(st.font.customCssUrl);
     ensureUploadedFonts(st.font.uploads);
   }
 
-  /* structural facts — differences here need a rebuild (quick out+in),
-     they cannot be morphed smoothly */
+  /* --------------------------------------------------------- grid layout */
+
+  /* Elements are placed by (row, col); several can share one cell and then
+     render as a horizontal line ordered by place.order. Columns are shared
+     across rows, which is what keeps a badge exactly above a logo. */
+  function layoutOf(look) {
+    var els = visibleElements(look);
+    var rows = 0, cols = 0;
+    els.forEach(function (e) {
+      /* full-height elements must not create rows of their own */
+      if (!e.place.spanAll) rows = Math.max(rows, e.place.row + (e.place.rowSpan || 1));
+      cols = Math.max(cols, e.place.col + (e.place.colSpan || 1));
+    });
+    rows = Math.max(rows, 1);
+    cols = Math.max(cols, 1);
+
+    var stretchCols = {};
+    els.forEach(function (e) { if (e.place.stretch) stretchCols[e.place.col] = true; });
+
+    var cells = {};
+    els.forEach(function (e) {
+      var row = e.place.spanAll ? 0 : e.place.row;
+      var span = e.place.spanAll ? rows : (e.place.rowSpan || 1);
+      var k = row + ':' + e.place.col;
+      if (!cells[k]) {
+        cells[k] = { row: row, col: e.place.col, rowSpan: 1, colSpan: 1, els: [] };
+      }
+      cells[k].rowSpan = Math.max(cells[k].rowSpan, span);
+      cells[k].colSpan = Math.max(cells[k].colSpan, e.place.colSpan || 1);
+      cells[k].els.push(e);
+    });
+    Object.keys(cells).forEach(function (k) {
+      cells[k].els.sort(function (a, b) { return a.place.order - b.place.order; });
+    });
+
+    return {
+      els: els, cells: cells,
+      rows: Math.max(rows, 1), cols: Math.max(cols, 1),
+      stretchCols: stretchCols,
+    };
+  }
+
+  function gridTemplates(L) {
+    var colDefs = [];
+    for (var c = 0; c < L.cols; c++) {
+      colDefs.push(L.stretchCols[c] ? 'minmax(0, 1fr)' : 'auto');
+    }
+    /* nothing stretches -> let the last column take the slack so the block
+       still fills the layout width when "full width" is on */
+    return {
+      columns: colDefs.join(' '),
+      rows: new Array(L.rows).fill('auto').join(' '),
+    };
+  }
+
+  /* identity of the DOM structure — a change here needs a rebuild */
   function structureOf(look) {
+    var L = layoutOf(look);
     return [
       resolveDir(look),
-      look.content.topline.enabled,
-      look.content.badge.enabled,
-      look.content.logo.enabled,
       look.style.layout.anchor,
-      look.style.layout.fullWidth,
-      look.style.layout.logoSide,
-      look.style.edges.style,
-      look.style.accent.mode,
+      look.style.layout.fullWidth ? 1 : 0,
+      L.rows, L.cols,
+      L.els.map(function (e) {
+        return [e.id, e.kind, e.place.row, e.place.col, e.place.order, e.place.rowSpan,
+                e.place.colSpan, e.place.stretch ? 1 : 0, e.place.spanAll ? 1 : 0].join(':');
+      }).join(','),
     ].join('|');
+  }
+
+  function buildGrid(look) {
+    var L = layoutOf(look);
+    nodes = {};
+    lt.innerHTML = '';
+    grid = document.createElement('div');
+    grid.className = 'lt-grid';
+    var tpl = gridTemplates(L);
+    grid.style.gridTemplateColumns = tpl.columns;
+    grid.style.gridTemplateRows = tpl.rows;
+
+    /* stagger order: bottom row first, then left to right */
+    var maxRow = L.rows - 1;
+    var maxI = 0;
+
+    Object.keys(L.cells).forEach(function (key) {
+      var c = L.cells[key];
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.cell = key;
+      cell.style.gridRow = (c.row + 1) + ' / span ' + c.rowSpan;
+      cell.style.gridColumn = (c.col + 1) + ' / span ' + c.colSpan;
+
+      c.els.forEach(function (e) {
+        var i = (maxRow - e.place.row) + e.place.col * 0.35;
+        maxI = Math.max(maxI, i);
+
+        var box = document.createElement('div');
+        box.className = 'box anim-el' + (e.kind === 'image' ? ' img-box' : '');
+        box.dataset.id = e.id;
+        box.style.setProperty('--i', i.toFixed(2));
+
+        if (e.kind === 'image') {
+          var img = document.createElement('img');
+          img.alt = '';
+          box.appendChild(img);
+          nodes[e.id] = { cell: cell, box: box, img: img };
+        } else {
+          var txt = document.createElement('span');
+          txt.className = 'txt';
+          var line = document.createElement('span');
+          line.className = 'line';
+          line.setAttribute('dir', 'auto');
+          txt.appendChild(line);
+          box.appendChild(txt);
+          nodes[e.id] = { cell: cell, box: box, txt: txt, line: line };
+        }
+        cell.appendChild(box);
+      });
+
+      grid.appendChild(cell);
+    });
+
+    stage.style.setProperty('--n', (maxI + 1).toFixed(2));
+    lt.appendChild(grid);
+  }
+
+  /* ------------------------------------------------------- element styles */
+
+  function applyElementStyle(e, look, L) {
+    var n = nodes[e.id];
+    if (!n) return;
+    var st = e.style;
+    var box = n.box, cell = n.cell;
+
+    box.style.background = boxBackground(st);
+    box.style.color = st.color;
+    box.style.fontSize = st.size + 'px';
+    box.style.fontWeight = st.weight;
+    box.style.letterSpacing = st.letterSpacing + 'px';
+    box.style.padding = st.padY + 'px ' + st.padX + 'px';
+    box.style.lineHeight = st.lineHeight || 1.2;
+    box.style.minWidth = (st.minWidth || 0) + 'px';
+    /* Fill the cell when this element stretches, and also when it sits in an
+       auto-sized column: that column is exactly as wide as its widest member,
+       so filling keeps stacked side elements (badge over logo) flush. In a
+       flexible (1fr) column a non-stretching bar hugs its own text instead. */
+    var inFlexCol = !!(L && L.stretchCols[e.place.col]);
+    var cellKey = (e.place.spanAll ? 0 : e.place.row) + ':' + e.place.col;
+    var sharesCell = !!(L && L.cells[cellKey] && L.cells[cellKey].els.length > 1);
+    box.style.width = (e.place.stretch || (!inFlexCol && !sharesCell)) ? '100%' : '';
+    box.style.flex = e.place.stretch ? '1 1 auto' : '0 0 auto';
+
+    /* edges: per element, or inherited from the global look */
+    var ed = st.edges && st.edges.mode !== 'inherit' ? st.edges : null;
+    var mode = ed ? ed.mode : look.style.edges.style;
+    var radius = ed ? ed.radius : look.style.edges.radius;
+    var chamfer = ed ? ed.chamfer : look.style.edges.chamfer;
+    box.dataset.edges = mode;
+    box.style.setProperty('--radius', (radius || 0) + 'px');
+    box.style.setProperty('--chamfer', (chamfer || 0) + 'px');
+
+    box.dataset.accent = (st.accent && st.accent.mode) || 'none';
+    box.style.setProperty('--accent-color', (st.accent && st.accent.color) || '#1c56d6');
+    box.style.setProperty('--accent-h', ((st.accent && st.accent.thickness) || 6) + 'px');
+
+    if (e.kind === 'text') {
+      n.txt.style.textAlign = st.align && st.align !== 'auto' ? st.align : (look.style.textAlign || 'start');
+      n.txt.style.whiteSpace = st.nowrap ? 'nowrap' : '';
+      if (e.place.stretch) cell.dataset.stretch = '1';
+    } else {
+      box.style.minHeight = Math.round((st.size || 56) * 1.18 + (st.padY || 0) * 2) + 'px';
+      box.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
+      n.img.style.objectFit = (e.image && e.image.fit) || 'contain';
+    }
   }
 
   /* ------------------------------------------------------------- updates */
 
   function swapText(container, line, newText, mode) {
     var cls = mode === 'crossfade' ? 'swap-fade' : 'swap-slide';
+    /* Freeze the outgoing text's geometry before the new text can resize the
+       box. Measured with the fractional rect: offsetWidth rounds down, and
+       losing that sub-pixel is enough to re-wrap the last word, which shows
+       up as the old text "jumping a line" mid-animation. */
+    var r = line.getBoundingClientRect();
+    var rtl = stage.dataset.dir === 'rtl';
     var clone = line.cloneNode(true);
     clone.className = 'line line-exit ' + cls;
+    clone.style.width = (r.width + 1) + 'px';
+    clone.style.height = Math.ceil(r.height) + 'px';
+    if (rtl) { clone.style.right = '0'; clone.style.left = 'auto'; }
+    else { clone.style.left = '0'; clone.style.right = 'auto'; }
     container.appendChild(clone);
     line.textContent = newText;
     line.classList.add('line-enter', cls);
@@ -222,79 +368,77 @@
     }, (anim ? anim.changeMs : 450) + 120);
   }
 
-  function flipWidth(bar, mutate) {
-    var w0 = bar.offsetWidth;
+  /* animate a box between its old and new natural width */
+  function flipWidth(box, mutate) {
+    var w0 = box.getBoundingClientRect().width;
     mutate();
-    bar.style.width = '';
-    var w1 = bar.offsetWidth;
+    box.style.width = '';
+    var w1 = box.getBoundingClientRect().width;
     if (Math.abs(w1 - w0) < 2) return;
-    bar.style.width = w0 + 'px';
-    void bar.offsetWidth;
-    bar.style.width = w1 + 'px';
-    setTimeout(function () { bar.style.width = ''; }, (anim ? anim.changeMs : 450) + 80);
+    box.style.width = w0 + 'px';
+    void box.offsetWidth;
+    box.style.width = w1 + 'px';
+    setTimeout(function () { box.style.width = ''; }, (anim ? anim.changeMs : 450) + 80);
   }
 
-  function updateText(which, newText, animate) {
-    var box = el[which];
-    var container = box.querySelector('.txt');
-    var line = box.querySelector('.line');
-    if (line.textContent === newText) return;
+  function updateText(e, animate) {
+    var n = nodes[e.id];
+    if (!n || !n.line) return;
+    var newText = e.text || '';
+    if (n.line.textContent === newText) return;
     var mode = anim ? anim.changeStyle : 'slide-swap';
     if (animate && mode !== 'instant') {
-      var canFlip = (which !== 'badge') && current && !current.style.layout.fullWidth;
-      if (canFlip) {
-        flipWidth(box, function () { swapText(container, line, newText, mode); });
+      if (e.place.stretch) {
+        /* width is dictated by the layout, not the text */
+        swapText(n.txt, n.line, newText, mode);
       } else {
-        swapText(container, line, newText, mode);
+        flipWidth(n.box, function () { swapText(n.txt, n.line, newText, mode); });
       }
     } else {
-      line.textContent = newText;
+      n.line.textContent = newText;
     }
   }
 
-  function updateLogo(url, animate) {
-    var img = el.logoImg;
-    var target = url || '';
-    if (img.dataset.src === target) return;
-    img.dataset.src = target;
-    if (animate && img.src) {
-      var clone = img.cloneNode(false);
-      clone.className = 'logo-exit';
-      clone.style.cssText = 'position:absolute;inset:0;margin:auto;';
-      el.logobox.appendChild(clone);
-      img.classList.add('logo-enter');
-      img.src = target;
+  function updateImage(e, animate) {
+    var n = nodes[e.id];
+    if (!n || !n.img) return;
+    var target = (e.image && e.image.url) || '';
+    if (n.img.dataset.src === target) return;
+    n.img.dataset.src = target;
+    if (animate && n.img.src) {
+      var clone = n.img.cloneNode(false);
+      clone.className = 'img-exit';
+      n.box.appendChild(clone);
+      n.img.classList.add('img-enter');
+      n.img.src = target;
       setTimeout(function () {
         clone.remove();
-        img.classList.remove('logo-enter');
+        n.img.classList.remove('img-enter');
       }, (anim ? anim.changeMs : 450) + 120);
     } else {
-      img.src = target;
+      n.img.src = target;
     }
   }
 
   function updateDom(look, animate) {
-    var c = look.content, st = look.style;
-    setVars(look);
+    setStageVars(look);
 
     var d = stage.dataset;
     d.dir = resolveDir(look);
-    d.edges = st.edges.style;
-    d.accent = st.accent.mode;
-    d.anchor = st.layout.anchor;
-    d.fullwidth = st.layout.fullWidth ? '1' : '0';
-    d.logoside = st.layout.logoSide;
-    d.hasTop = (c.topline.enabled || c.badge.enabled) ? '1' : '0';
-    d.hasSide = (c.logo.enabled || c.badge.enabled) ? '1' : '0';
+    d.anchor = look.style.layout.anchor;
+    d.fullwidth = look.style.layout.fullWidth ? '1' : '0';
 
-    el.topline.style.display = c.topline.enabled ? '' : 'none';
-    el.badge.style.display = c.badge.enabled ? '' : 'none';
-    el.logobox.style.display = c.logo.enabled ? '' : 'none';
+    if (!grid || !current || structureOf(current) !== structureOf(look)) {
+      buildGrid(look);
+      animate = false; /* a fresh DOM has nothing to animate from */
+    }
 
-    if (c.topline.enabled) updateText('topline', c.topline.text || '', animate);
-    updateText('headline', c.headline.text || '', animate);
-    if (c.badge.enabled) updateText('badge', c.badge.text || '', animate);
-    if (c.logo.enabled) updateLogo(c.logo.url, animate);
+    var L = layoutOf(look);
+    L.els.forEach(function (e) {
+      applyElementStyle(e, look, L);
+      if (e.kind === 'text') updateText(e, animate);
+      else updateImage(e, animate);
+    });
 
     current = look;
   }
@@ -305,8 +449,8 @@
     if (animTimer) { clearTimeout(animTimer); animTimer = null; }
   }
 
-  function inTotal() { return anim.inMs + anim.staggerMs * 2 + 80; }
-  function outTotal() { return anim.outMs + anim.staggerMs * 2 + 80; }
+  function inTotal() { return anim.inMs + anim.staggerMs * 3 + 80; }
+  function outTotal() { return anim.outMs + anim.staggerMs * 3 + 80; }
 
   function playIn(done) {
     clearAnimTimer();
@@ -398,11 +542,7 @@
       return;
     }
 
-    if (t === 'anim') {
-      anim = msg.anim;
-      setAnimVars(anim);
-      return;
-    }
+    if (t === 'anim') { anim = msg.anim; setAnimVars(anim); return; }
 
     if (t === 'pending') {
       if (ROLE === 'preview') updateDom(msg.pending, false);

@@ -173,6 +173,10 @@ bool obs_module_load(void)
 	g_uploadDir = (std::filesystem::path(configDir) / "uploads").string();
 	std::filesystem::create_directories(g_uploadDir, ec);
 
+	/* defaults.json ships next to the web assets and is shared with the
+	   Node server, so both engines start from identical defaults */
+	LtState::setDefaultsPath((std::filesystem::path(g_webRoot) / "defaults.json").string());
+
 	g_state.init(configDir,
 		     [](const std::string &text, const char *role) {
 			     g_server.broadcastText(text, role);

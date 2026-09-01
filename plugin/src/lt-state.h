@@ -20,6 +20,9 @@ public:
 	using BroadcastFn = std::function<void(const std::string &text, const char *roleFilter)>;
 	using StudioModeFn = std::function<bool()>;
 
+	/* where defaults.json lives (data/public/defaults.json) — call before init */
+	static void setDefaultsPath(const std::string &path);
+
 	void init(const std::string &configDir, BroadcastFn broadcast, StudioModeFn studioMode);
 	void shutdown();
 
@@ -43,12 +46,26 @@ public:
 	void flushSave();
 
 private:
-	nlohmann::json defaultsLook();
-	nlohmann::json defaultsAnim();
-	nlohmann::json defaultsSettings();
-	nlohmann::json defaultsPresets();
+	static nlohmann::json defaultsLook();
+	static nlohmann::json defaultsAnim();
+	static nlohmann::json defaultsSettings();
+	static nlohmann::json defaultsPresets();
+	static nlohmann::json defaultsStyle();
+	static nlohmann::json defaultElement(const char *kind);
+
+	/* schema 1 (fixed slots) -> schema 2 (dynamic elements); idempotent */
+	static nlohmann::json migrateLook(const nlohmann::json &look);
+	static nlohmann::json migratePreset(const nlohmann::json &preset);
+	static nlohmann::json normalizeElement(const nlohmann::json &el);
+	static void normalizePlacement(nlohmann::json &els);
+	static std::string newId(const char *prefix);
+
 	static nlohmann::json deepMerge(const nlohmann::json &base, const nlohmann::json &over);
 	static nlohmann::json sanitize(const nlohmann::json &v, int depth = 0);
+
+	/* element / snippet helpers used by handleClientMessage */
+	nlohmann::json *findElement(const std::string &id);
+	void pushPendingLocked();
 
 	bool isDirtyLocked();
 	nlohmann::json publicStateLocked();

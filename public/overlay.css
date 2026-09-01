@@ -1,4 +1,4 @@
-/* OBS Lower Thirds — overlay styles.
+/* OBS Lower Thirds — overlay styles (dynamic element model).
    Written flat (no CSS nesting) so it runs on the older Chromium builds
    embedded in OBS 28/29 as well as current ones. */
 
@@ -42,105 +42,38 @@ body.bg-green { background: #00b140; }
 }
 #stage[data-fullwidth="1"] .lt { width: 100%; max-width: none; }
 
-/* ------------------------------------------------------------ grid */
+/* ------------------------------------------------------------- grid */
 
 .lt-grid {
   display: grid;
-  direction: ltr; /* physical layout; text direction is applied inside bars */
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "top  side-top"
-    "main side-main";
+  direction: ltr;            /* physical placement; text direction lives in .txt */
   column-gap: var(--gap, 4px);
   row-gap: var(--gap, 4px);
   align-items: stretch;
+  justify-items: stretch;
 }
-#stage[data-logoside="left"] .lt-grid {
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "side-top  top"
-    "side-main main";
+
+/* one grid cell may hold several elements — they line up horizontally */
+.cell {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-width: 0;
+  gap: var(--gap, 4px);
 }
-#stage[data-has-top="0"] .lt-grid { row-gap: 0; }
-#stage[data-has-side="0"] .lt-grid { column-gap: 0; }
+/* in RTL the bars hug the right edge of their cell, as broadcast RTL does */
+#stage[data-dir="rtl"] .cell { justify-content: flex-end; }
+.cell[data-stretch="1"] { justify-content: stretch; }
 
-.topline-cell  { grid-area: top;       display: flex; align-items: stretch; justify-content: flex-start; min-width: 0; }
-.badge-cell    { grid-area: side-top;  display: flex; align-items: stretch; }
-.headline-cell { grid-area: main;      display: flex; align-items: stretch; justify-content: flex-start; min-width: 0; }
-.logo-cell     { grid-area: side-main; display: flex; align-items: stretch; }
+/* -------------------------------------------------------------- box */
 
-#stage[data-dir="rtl"] .topline-cell,
-#stage[data-dir="rtl"] .headline-cell { justify-content: flex-end; }
-
-#stage[data-has-top="0"] .topline-cell,
-#stage[data-has-top="0"] .badge-cell { display: none; }
-#stage[data-has-side="0"] .badge-cell,
-#stage[data-has-side="0"] .logo-cell { display: none; }
-
-/* ------------------------------------------------------------ bars */
-
-.bar {
+.box {
   position: relative;
   width: fit-content;
   max-width: 100%;
   display: flex;
   align-items: center;
-}
-#stage[data-fullwidth="1"] .headline-cell .bar { width: 100%; }
-
-.bar.headline {
-  background: var(--hl-bg, #fff);
-  color: var(--hl-color, #0d2b6b);
-  font-size: var(--hl-size, 56px);
-  font-weight: var(--hl-weight, 800);
-  letter-spacing: var(--hl-ls, 0px);
-  padding: var(--hl-pady, 16px) var(--hl-padx, 30px);
-  line-height: 1.18;
-}
-.bar.topline {
-  background: var(--tl-bg, #fff);
-  color: var(--tl-color, #111);
-  font-size: var(--tl-size, 28px);
-  font-weight: var(--tl-weight, 600);
-  letter-spacing: var(--tl-ls, 0px);
-  padding: var(--tl-pady, 9px) var(--tl-padx, 24px);
-  line-height: 1.2;
-}
-
-.badge {
-  background: var(--badge-bg, #1c56d6);
-  color: var(--badge-color, #fff);
-  font-size: var(--badge-size, 23px);
-  font-weight: var(--badge-weight, 700);
-  width: 100%;
-  min-width: max-content;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.28em 0.9em;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.logobox {
-  background: var(--logo-bg, #fff);
-  padding: var(--logo-pad, 12px);
-  min-width: var(--logo-minw, 180px);
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
-  position: relative;
-}
-.logobox img {
-  height: calc(var(--logo-h, 64px) * var(--logo-scale, 1));
-  max-width: 300px;
-  object-fit: contain;
-  display: block;
-}
-.logobox img.logo-exit {
-  position: absolute;
 }
 
 /* text container (clips the swap animation) */
@@ -154,73 +87,92 @@ body.bg-green { background: #00b140; }
 #stage[data-dir="rtl"] .txt { direction: rtl; }
 #stage[data-dir="ltr"] .txt { direction: ltr; }
 .line { display: block; }
+/* width/height/left/right are set inline at swap time to freeze the outgoing
+   text's layout so it cannot re-wrap while it animates out */
 .line-exit {
   position: absolute;
-  inset: 0;
+  top: 0;
 }
 
-/* ------------------------------------------------------------ edges */
+/* ------------------------------------------------------------ images */
 
-#stage[data-edges="rounded"] .bar,
-#stage[data-edges="rounded"] .badge,
-#stage[data-edges="rounded"] .logobox {
-  border-radius: var(--radius, 14px);
+.box.img-box {
+  justify-content: center;
+  overflow: hidden;
 }
-#stage[data-edges="chamfer"] .bar,
-#stage[data-edges="chamfer"] .badge,
-#stage[data-edges="chamfer"] .logobox {
+.box.img-box img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(var(--img-scale, 1));
+  max-width: calc(100% - 4px);
+  max-height: calc(100% - 4px);
+  object-fit: contain;
+  display: block;
+}
+
+/* ------------------------------------------------------------- edges */
+
+.box[data-edges="rounded"] { border-radius: var(--radius, 14px); }
+.box[data-edges="chamfer"] {
   clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
-  padding-left: calc(var(--chamfer, 26px) * 0.9);
-  padding-right: calc(var(--chamfer, 26px) * 0.9);
+  padding-left: calc(var(--chamfer, 26px) * 0.9) !important;
+  padding-right: calc(var(--chamfer, 26px) * 0.9) !important;
 }
-#stage[data-edges="chamfer"][data-dir="rtl"] .bar,
-#stage[data-edges="chamfer"][data-dir="rtl"] .badge,
-#stage[data-edges="chamfer"][data-dir="rtl"] .logobox {
+#stage[data-dir="rtl"] .box[data-edges="chamfer"] {
   clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 100%, var(--chamfer, 26px) 100%);
 }
 
 /* ------------------------------------------------------------ accent */
 
-.bar.headline::before {
+.box::before {
   content: "";
   position: absolute;
   display: none;
   background: var(--accent-color, #1c56d6);
   z-index: 2;
 }
-#stage[data-accent="top"] .bar.headline::before {
+.box[data-accent="top"]::before {
   display: block;
   top: 0; left: 0; right: 0;
   height: var(--accent-h, 6px);
 }
-#stage[data-accent="underline"] .bar.headline::before {
+.box[data-accent="underline"]::before,
+.box[data-accent="bottom"]::before {
   display: block;
   bottom: 0; left: 0; right: 0;
   height: var(--accent-h, 6px);
 }
-#stage[data-accent="side"] .bar.headline::before {
+.box[data-accent="side"]::before {
   display: block;
   top: 0; bottom: 0; left: 0;
   width: var(--accent-h, 6px);
 }
-#stage[data-accent="side"][data-dir="rtl"] .bar.headline::before {
+#stage[data-dir="rtl"] .box[data-accent="side"]::before {
   left: auto; right: 0;
 }
 
 /* ------------------------------------------------- property morphing */
 
 #stage.prop-anim { transition: padding var(--change-ms, 450ms) var(--ease); }
-#stage.prop-anim .lt { transition: filter var(--change-ms, 450ms) var(--ease), max-width var(--change-ms, 450ms) var(--ease); }
-#stage.prop-anim .lt-grid { transition: column-gap var(--change-ms, 450ms) var(--ease), row-gap var(--change-ms, 450ms) var(--ease); }
-#stage.prop-anim .bar,
-#stage.prop-anim .badge,
-#stage.prop-anim .logobox {
-  transition-property: background, background-color, color, width, min-width, border-radius, padding, font-size, letter-spacing, clip-path, opacity;
+#stage.prop-anim .lt {
+  transition: filter var(--change-ms, 450ms) var(--ease),
+              max-width var(--change-ms, 450ms) var(--ease);
+}
+#stage.prop-anim .lt-grid {
+  transition: column-gap var(--change-ms, 450ms) var(--ease),
+              row-gap var(--change-ms, 450ms) var(--ease);
+}
+#stage.prop-anim .box {
+  transition-property: background, background-color, color, width, min-width,
+                       border-radius, padding, font-size, letter-spacing,
+                       clip-path, opacity, min-height;
   transition-duration: var(--change-ms, 450ms);
   transition-timing-function: var(--ease);
 }
-#stage.prop-anim .logobox img {
-  transition: height var(--change-ms, 450ms) var(--ease), opacity var(--change-ms, 450ms) var(--ease);
+#stage.prop-anim .box.img-box img {
+  transition: transform var(--change-ms, 450ms) var(--ease),
+              opacity var(--change-ms, 450ms) var(--ease);
 }
 
 /* --------------------------------------------------- text swap anim */
@@ -235,12 +187,18 @@ body.bg-green { background: #00b140; }
 @keyframes kf-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes kf-fade-in  { from { opacity: 0; } to { opacity: 1; } }
 
-.logo-exit { animation: kf-fade-out var(--change-ms, 450ms) var(--ease) both; }
-.logo-enter { animation: kf-fade-in var(--change-ms, 450ms) var(--ease) both; }
+.img-exit {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(var(--img-scale, 1));
+  max-width: calc(100% - 4px);
+  max-height: calc(100% - 4px);
+  object-fit: contain;
+  animation: kf-fade-out var(--change-ms, 450ms) var(--ease) both;
+}
+.img-enter { animation: kf-fade-in var(--change-ms, 450ms) var(--ease) both; }
 
 /* ------------------------------------------------------ in/out anims */
-
-.anim-el { /* the four animatable blocks; --i set inline */ }
 
 #stage.anim-in .anim-el {
   animation-duration: var(--in-ms, 700ms);
@@ -250,7 +208,7 @@ body.bg-green { background: #00b140; }
 }
 #stage.anim-out .anim-el {
   animation-duration: var(--out-ms, 500ms);
-  animation-timing-function: var(--ease-out-curve, var(--ease));
+  animation-timing-function: var(--ease);
   animation-fill-mode: both;
   animation-delay: calc((var(--n, 4) - 1 - var(--i, 0)) * var(--stagger, 90ms));
 }
@@ -291,8 +249,8 @@ body.bg-green { background: #00b140; }
 @keyframes kf-pop-in  { from { transform: scale(0.84) translateY(26px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
 @keyframes kf-pop-out { from { transform: scale(1) translateY(0); opacity: 1; } to { transform: scale(0.84) translateY(26px); opacity: 0; } }
 
-/* note: wipe uses clip-path, which overrides the chamfer clip while the
-   element animates; the chamfer is restored the moment the animation ends */
+/* note: wipe animates clip-path, which overrides a chamfer clip while the
+   element is animating; the chamfer is restored when the animation ends */
 
 /* --------------------------------------------------------- pvw badge */
 

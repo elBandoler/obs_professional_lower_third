@@ -4,18 +4,22 @@ Broadcast-style animated lower thirds for OBS Studio, with a real **preview → 
 you edit in a preview, nothing touches the program feed, and the change goes live — animated —
 when you press **TAKE** or OBS's own **Transition** button.
 
-- Two-line (top line + headline), headline-only, badge/tag ("LIVE", a URL…), customizable logo
-- Full styling control: colors, opacity, gradients, fonts, sizes, weights, spacing, padding,
-  position, width, RTL/LTR, slanted/rounded/square edges, accent strips, shadows, block gaps
+- **Fully dynamic layout** — add, remove, duplicate and move as many text and image elements
+  as you like. Two-line news straps, headline-only, badges/tags, a logo on either side or
+  filling the whole height: all of it is just elements you arrange.
+- Full styling control per element: colours, opacity, **multi-stop linear/radial/conic
+  gradients**, background pictures, fonts, sizes, weights, spacing, padding, RTL/LTR,
+  slanted/rounded/square edges, accent strips, shadows
+- **Saved text presets per element** — recall a wording with one tap (loads to preview only)
 - Animations: slide / wipe / fade / pop in-out, animated text swaps, property morphing,
   stagger, easing, durations — or disable animations entirely for instant cuts
 - Presets (built-in + your own), auto-hide timer, logo upload
 - Control panel docks **inside** OBS; also works from another browser/tablet on your machine
 - HTTP API for Stream Deck / hotkey tools
 
-It is delivered the way modern broadcast graphics integrate with OBS (browser source +
-browser dock + obs-websocket), not as a compiled C++ plugin — that is what allows
-high-quality text rendering, animation, and unlimited styling.
+It ships as a native C++ OBS plugin that renders through OBS's own browser engine, so text,
+animation and styling are broadcast quality. A Node.js server and an OBS Lua script are
+included as alternatives that serve exactly the same pages.
 
 ---
 
@@ -80,7 +84,7 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
   any `?role=preview` source) shows it immediately. **The program overlay does not change.**
 - **TAKE** (dock button, or OBS **Transition**, or `/api/take`) commits pending → program:
   - text lines swap with an animation, colors/sizes/positions morph smoothly,
-  - structural changes (logo side, line added/removed…) do a quick out-and-in,
+  - structural changes (an element added/removed/moved) do a quick out-and-in,
   - with **animations off** (checkbox next to TAKE, or Animation section): the change applies
     **instantly**, no motion.
 - **SHOW** commits pending and animates the lower third in; **HIDE** animates it out.
@@ -101,29 +105,44 @@ The dock has two views, toggled with the **SIMPLE / ADVANCED** button in its hea
 (remembered per machine):
 
 - **Simple** — operator mode: quick-launch buttons for every saved preset (tap → loads into
-  the preview), the three text fields (top line / headline / badge — only the enabled ones),
-  and the SHOW / TAKE / HIDE controls. Nothing else to touch mid-show.
+  the preview), one text box per text element with its saved-text chips underneath, and the
+  SHOW / TAKE / HIDE controls. Nothing else to touch mid-show.
 - **Advanced** — the full editor below.
 
 Advanced sections:
 
-- **Content** — top line on/off + text, headline, badge on/off + text, logo on/off,
-  upload/URL, logo size.
-- **Layout & position** — direction (auto/RTL/LTR), text align, logo side, full width or
+- **Elements** — the lower third is a list of elements you can add, remove, duplicate and
+  move. Each is either **text** or an **image**, and each has its own colours, gradient,
+  background picture, type, padding, edges and accent strip.
+  - **＋ text / ＋ image** adds one; **⧉ copy** duplicates; **✕ remove** deletes.
+  - **▲ ▼** move an element between rows, **◀ ▶** between columns, **own row** gives it a
+    row to itself. Elements sharing a cell sit side by side on one line.
+  - **Stretch to fill** makes an element take the remaining width of its row.
+  - **Full height** makes it span every row — that is how you get a logo standing beside the
+    whole block instead of a badge above it.
+  - Columns are shared between rows, so an element keeps lining up with the one above it
+    (a badge stays exactly above a logo).
+- **Text presets (per element)** — under every text element, **＋ save text** stores its
+  current wording. Tap a saved chip to load it back. Loading only fills the **preview** —
+  nothing reaches air until you press SHOW or TAKE.
+- **Layout & position** — direction (auto/RTL/LTR), default text align, full width or
   anchored (left/center/right) with max width, side/bottom margins, gap between blocks.
-- **Colors & bars** — background + opacity + text color per bar, headline gradient (2nd color +
-  angle), **background image per bar** (upload or URL, cover/contain/stretch/tile — the bar's
-  color acts as a tint over the picture, lower its opacity to reveal more image), badge
-  colors, logo box color/padding/min-width, accent strip (top/side/underline).
+- **Colours (per element)** — background + opacity + text colour, **multi-stop gradients**
+  (linear, radial or conic; add as many colour stops as you like, drag them on the gradient
+  strip, each with its own position and opacity), **background image** (upload or URL,
+  cover/contain/stretch/tile — the colour acts as a tint over the picture, lower its opacity
+  to reveal more image), accent strip (top/bottom/side).
 - **Typography** — **pick any font installed on the PC** (searchable list), **upload font
   files** (.ttf/.otf/.woff/.woff2 — stored with the overlay, usable immediately), raw font
   stack, custom font CSS URL (e.g. Google Fonts — needs internet at runtime),
-  size/weight/letter-spacing/padding per line, badge size/weight.
-- **Edges & effects** — square / rounded (radius) / slanted (amount), shadow.
+  and per-element size/weight/letter-spacing/line-height/padding.
+- **Edges & effects** — global square / rounded (radius) / slanted (amount) and shadow.
+  Any element can override the global edge style with its own.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
-- **Presets** — save/load/overwrite/delete complete looks (content + style + animation).
-  Loading a preset only changes the *preview*; TAKE or SHOW puts it on air.
+- **Presets** — save/load/overwrite/delete complete looks (all elements + style +
+  animation). Loading a preset only changes the *preview*; TAKE or SHOW puts it on air.
+  Presets are what the SIMPLE view's quick-launch buttons run.
 
 Hebrew/Arabic content is auto-detected (or force RTL) and the whole layout mirrors properly.
 

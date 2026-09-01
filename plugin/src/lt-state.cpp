@@ -1,68 +1,156 @@
 #include "lt-state.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <random>
 #include <sstream>
+#include <stdexcept>
+#include <vector>
 
 using nlohmann::json;
 namespace fs = std::filesystem;
 
 extern void lt_log(const char *fmt, ...); /* provided by plugin-main */
 
-/* ------------------------------------------------------------- defaults */
+/* ------------------------------------------------- defaults & migration
+ *
+ * The real defaults, element templates and built-in presets live in
+ * data/public/defaults.json, which the Node server reads too — one source of
+ * truth so the two engines cannot drift apart. Only a tiny fallback is
+ * compiled in, for the case where that file is missing.
+ */
+
+static json g_defaults;          /* loaded from defaults.json */
+static std::string g_defaultsPath;
+
+static json minimalDefaults()
+{
+	static const char *MIN = R"({
+	  "schema": 2,
+	  "elementDefaults": {
+	    "text": { "kind": "text", "name": "Text", "enabled": true,
+	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
+	      "text": "New text", "snippets": [],
+	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 40, "weight": 700,
+	        "letterSpacing": 0, "padX": 26, "padY": 12, "lineHeight": 1.2, "align": "auto",
+	        "nowrap": false, "minWidth": 0,
+	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
+	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } },
+	    "image": { "kind": "image", "name": "Image", "enabled": true,
+	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
+	      "image": { "url": "", "fit": "contain", "scale": 1 },
+	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 56, "weight": 700,
+	        "letterSpacing": 0, "padX": 12, "padY": 12, "lineHeight": 1.2, "align": "center",
+	        "nowrap": false, "minWidth": 160,
+	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
+	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } }
+	  },
+	  "styleDefaults": {
+	    "direction": "auto", "textAlign": "start",
+	    "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70, "sideMargin": 0, "bottomMargin": 64 },
+	    "gap": 4,
+	    "font": { "family": "Segoe UI, Arial, sans-serif", "customCssUrl": "", "uploads": [] },
+	    "edges": { "style": "square", "radius": 14, "chamfer": 26 },
+	    "shadow": 40
+	  },
+	  "anim": { "enabled": true, "inStyle": "slide-up", "outStyle": "auto", "changeStyle": "slide-swap",
+	    "inMs": 700, "outMs": 500, "changeMs": 450, "staggerMs": 90, "easing": "snappy", "autoHideSec": 0 },
+	  "look": { "schema": 2, "elements": [ { "id": "el-headline", "kind": "text", "name": "Headline",
+	      "enabled": true, "place": { "row": 0, "col": 0, "order": 0, "stretch": true, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
+	      "text": "Lower third", "snippets": [],
+	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#0d2b6b", "size": 56, "weight": 800,
+	        "letterSpacing": 0, "padX": 30, "padY": 16, "lineHeight": 1.18, "align": "auto",
+	        "nowrap": false, "minWidth": 0,
+	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
+	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } } ],
+	    "style": { "direction": "auto", "textAlign": "start",
+	      "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70, "sideMargin": 0, "bottomMargin": 64 },
+	      "gap": 4, "font": { "family": "Segoe UI, Arial, sans-serif", "customCssUrl": "", "uploads": [] },
+	      "edges": { "style": "square", "radius": 14, "chamfer": 26 }, "shadow": 40 } },
+	  "presets": []
+	})";
+	return json::parse(MIN);
+}
+
+void LtState::setDefaultsPath(const std::string &path)
+{
+	g_defaultsPath = path;
+}
+
+static void ensureDefaultsLoaded()
+{
+	if (!g_defaults.is_null())
+		return;
+	try {
+		if (g_defaultsPath.empty())
+			throw std::runtime_error("no defaults path");
+		std::ifstream in(g_defaultsPath, std::ios::binary);
+		if (!in)
+			throw std::runtime_error("cannot open " + g_defaultsPath);
+		json d = json::parse(in, nullptr, true, true);
+		if (!d.contains("look") || !d.contains("elementDefaults") ||
+		    !d.contains("styleDefaults") || !d.contains("anim"))
+			throw std::runtime_error("incomplete defaults.json");
+		g_defaults = d;
+		lt_log("loaded defaults from %s", g_defaultsPath.c_str());
+	} catch (const std::exception &e) {
+		lt_log("could not read defaults.json (%s) - using the built-in minimal look", e.what());
+		g_defaults = minimalDefaults();
+	}
+}
+
+json LtState::defaultElement(const char *kind)
+{
+	ensureDefaultsLoaded();
+	const char *k = (kind && std::string(kind) == "image") ? "image" : "text";
+	return g_defaults["elementDefaults"][k];
+}
+
+json LtState::defaultsStyle()
+{
+	ensureDefaultsLoaded();
+	return g_defaults["styleDefaults"];
+}
 
 json LtState::defaultsLook()
 {
-	static const char *LOOK = R"({
-	  "content": {
-	    "topline": { "enabled": true, "text": "שם הדובר – תפקיד או תיאור" },
-	    "headline": { "text": "כותרת לדוגמה: כך ניתן להציג טקסט ארוך יותר בתחתית המסך" },
-	    "badge": { "enabled": true, "text": "example.com/live" },
-	    "logo": { "enabled": true, "url": "/assets/logo-placeholder.svg", "scale": 1 }
-	  },
-	  "style": {
-	    "direction": "auto",
-	    "textAlign": "start",
-	    "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70,
-	                "sideMargin": 0, "bottomMargin": 64, "logoSide": "right" },
-	    "bars": {
-	      "headline": { "bg": "#ffffff", "bgOpacity": 1, "color": "#0d2b6b",
-	                    "size": 56, "weight": 800, "letterSpacing": 0, "padX": 30, "padY": 16,
-	                    "gradient": { "enabled": false, "color2": "#e9edf5", "angle": 180 },
-	                    "image": { "enabled": false, "url": "", "fit": "cover" } },
-	      "topline": { "bg": "#ffffff", "bgOpacity": 0.95, "color": "#12161c",
-	                   "size": 28, "weight": 600, "letterSpacing": 0, "padX": 24, "padY": 9,
-	                   "image": { "enabled": false, "url": "", "fit": "cover" } },
-	      "badge": { "bg": "#1c56d6", "color": "#ffffff", "size": 23, "weight": 700 },
-	      "logoBox": { "bg": "#ffffff", "bgOpacity": 1, "pad": 12, "minWidth": 180 }
-	    },
-	    "font": { "family": "'Segoe UI', 'Heebo', 'Noto Sans Hebrew', Arial, sans-serif",
-	              "customCssUrl": "", "uploads": [] },
-	    "edges": { "style": "square", "radius": 14, "chamfer": 26 },
-	    "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 },
-	    "shadow": 40,
-	    "gap": 4
-	  }
-	})";
-	return json::parse(LOOK);
+	ensureDefaultsLoaded();
+	return migrateLook(g_defaults["look"]);
 }
 
 json LtState::defaultsAnim()
 {
-	static const char *ANIM = R"({
-	  "enabled": true,
-	  "inStyle": "slide-up", "outStyle": "auto", "changeStyle": "slide-swap",
-	  "inMs": 700, "outMs": 500, "changeMs": 450, "staggerMs": 90,
-	  "easing": "snappy", "autoHideSec": 0
-	})";
-	return json::parse(ANIM);
+	ensureDefaultsLoaded();
+	return g_defaults["anim"];
+}
+
+json LtState::defaultsPresets()
+{
+	ensureDefaultsLoaded();
+	json out = json::array();
+	if (g_defaults.contains("presets") && g_defaults["presets"].is_array()) {
+		for (const auto &p : g_defaults["presets"]) {
+			json m = migratePreset(p);
+			if (!m.is_null())
+				out.push_back(m);
+		}
+	}
+	return out;
 }
 
 json LtState::defaultsSettings()
 {
-	/* native mode: no obs-websocket connection settings needed, but the
-	   transition behaviour toggles are kept (same paths the panel uses) */
 	static const char *SETTINGS = R"({
 	  "obs": { "enabled": true, "host": "", "port": 0, "password": "",
 	           "commitOnTransition": true, "onlyStudioMode": true,
@@ -72,90 +160,350 @@ json LtState::defaultsSettings()
 	return json::parse(SETTINGS);
 }
 
-json LtState::defaultsPresets()
+/* ------------------------------------------------------------ migration */
+
+std::string LtState::newId(const char *prefix)
 {
-	json base = defaultsLook();
+	static std::mt19937_64 rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
+	std::ostringstream o;
+	o << prefix << "-" << std::hex << (rng() & 0xffffffffULL);
+	return o.str();
+}
 
-	json breaking = base;
-	breaking["content"] = json::parse(R"({
-	  "topline": { "enabled": true, "text": "BREAKING NEWS" },
-	  "headline": { "text": "Major story developing right now" },
-	  "badge": { "enabled": true, "text": "LIVE" },
-	  "logo": { "enabled": true, "url": "/assets/logo-placeholder.svg", "scale": 1 }
-	})");
-	breaking["style"]["direction"] = "ltr";
-	breaking["style"]["bars"]["headline"] = json::parse(R"({
-	  "bg": "#b31217", "bgOpacity": 1, "color": "#ffffff",
-	  "size": 54, "weight": 800, "letterSpacing": 1, "padX": 30, "padY": 16,
-	  "gradient": { "enabled": true, "color2": "#7a0c10", "angle": 180 }
-	})");
-	breaking["style"]["bars"]["topline"] = json::parse(R"({
-	  "bg": "#111111", "bgOpacity": 1, "color": "#ffd400",
-	  "size": 26, "weight": 800, "letterSpacing": 4, "padX": 24, "padY": 8
-	})");
-	breaking["style"]["bars"]["badge"] = json::parse(R"({ "bg": "#ffffff", "color": "#b31217", "size": 22, "weight": 800 })");
-	breaking["style"]["bars"]["logoBox"] = json::parse(R"({ "bg": "#111111", "bgOpacity": 1, "pad": 12, "minWidth": 170 })");
-	breaking["style"]["edges"] = json::parse(R"({ "style": "chamfer", "radius": 0, "chamfer": 24 })");
-	json breakingAnim = defaultsAnim();
-	breakingAnim["inStyle"] = "wipe";
+static double numOr(const json &j, const char *key, double dflt)
+{
+	if (j.is_object() && j.contains(key) && j[key].is_number())
+		return j[key].get<double>();
+	return dflt;
+}
 
-	json strap = base;
-	strap["content"] = json::parse(R"({
-	  "topline": { "enabled": true, "text": "Senior Political Analyst" },
-	  "headline": { "text": "Dana Cohen" },
-	  "badge": { "enabled": false, "text": "" },
-	  "logo": { "enabled": false, "url": "", "scale": 1 }
-	})");
-	strap["style"]["direction"] = "ltr";
-	strap["style"]["layout"] = json::parse(R"({ "anchor": "left", "fullWidth": false, "maxWidth": 46,
-	  "sideMargin": 80, "bottomMargin": 90, "logoSide": "left" })");
-	strap["style"]["bars"]["headline"] = json::parse(R"({
-	  "bg": "#101418", "bgOpacity": 0.88, "color": "#ffffff",
-	  "size": 46, "weight": 700, "letterSpacing": 0, "padX": 28, "padY": 12,
-	  "gradient": { "enabled": false, "color2": "#101418", "angle": 180 }
-	})");
-	strap["style"]["bars"]["topline"] = json::parse(R"({
-	  "bg": "#1c56d6", "bgOpacity": 1, "color": "#ffffff",
-	  "size": 22, "weight": 600, "letterSpacing": 2, "padX": 20, "padY": 6
-	})");
-	strap["style"]["edges"] = json::parse(R"({ "style": "rounded", "radius": 8, "chamfer": 0 })");
-	strap["style"]["accent"] = json::parse(R"({ "mode": "side", "color": "#1c56d6", "thickness": 6 })");
-	json strapAnim = defaultsAnim();
-	strapAnim["inStyle"] = "slide-side";
-	strapAnim["autoHideSec"] = 8;
+static int clampInt(double v, int lo, int hi)
+{
+	int i = (int)v;
+	if (i < lo) i = lo;
+	if (i > hi) i = hi;
+	return i;
+}
 
-	json grad = base;
-	grad["content"] = json::parse(R"({
-	  "topline": { "enabled": false, "text": "" },
-	  "headline": { "text": "Evening Headlines" },
-	  "badge": { "enabled": false, "text": "" },
-	  "logo": { "enabled": true, "url": "/assets/logo-placeholder.svg", "scale": 0.9 }
-	})");
-	grad["style"]["direction"] = "ltr";
-	grad["style"]["textAlign"] = "center";
-	grad["style"]["layout"] = json::parse(R"({ "anchor": "center", "fullWidth": false, "maxWidth": 50,
-	  "sideMargin": 0, "bottomMargin": 72, "logoSide": "left" })");
-	grad["style"]["bars"]["headline"] = json::parse(R"({
-	  "bg": "#182848", "bgOpacity": 0.96, "color": "#ffffff",
-	  "size": 48, "weight": 700, "letterSpacing": 0, "padX": 34, "padY": 16,
-	  "gradient": { "enabled": true, "color2": "#4b6cb7", "angle": 115 }
-	})");
-	grad["style"]["bars"]["logoBox"] = json::parse(R"({ "bg": "#0e1a33", "bgOpacity": 0.96, "pad": 12, "minWidth": 120 })");
-	grad["style"]["edges"] = json::parse(R"({ "style": "rounded", "radius": 16, "chamfer": 0 })");
-	json gradAnim = defaultsAnim();
-	gradAnim["inStyle"] = "pop";
-	gradAnim["easing"] = "bouncy";
+static bool boolOr(const json &o, const char *k, bool dflt)
+{
+	if (o.is_object() && o.contains(k) && o[k].is_boolean())
+		return o[k].get<bool>();
+	return dflt;
+}
 
-	json presets = json::array();
-	presets.push_back({{"id", "p-knesset"}, {"name", "News two-line (RTL demo)"},
-			   {"content", base["content"]}, {"style", base["style"]}, {"anim", defaultsAnim()}});
-	presets.push_back({{"id", "p-breaking"}, {"name", "Breaking news (red)"},
-			   {"content", breaking["content"]}, {"style", breaking["style"]}, {"anim", breakingAnim}});
-	presets.push_back({{"id", "p-strap"}, {"name", "Name strap (minimal)"},
-			   {"content", strap["content"]}, {"style", strap["style"]}, {"anim", strapAnim}});
-	presets.push_back({{"id", "p-gradient"}, {"name", "Centered gradient"},
-			   {"content", grad["content"]}, {"style", grad["style"]}, {"anim", gradAnim}});
-	return presets;
+static json strOr(const json &o, const char *k, const char *dflt)
+{
+	if (o.is_object() && o.contains(k) && o[k].is_string())
+		return o[k];
+	return json(dflt);
+}
+
+json LtState::normalizeElement(const json &in)
+{
+	if (!in.is_object())
+		return json();
+	std::string kind = (in.contains("kind") && in["kind"].is_string() &&
+	                    in["kind"].get<std::string>() == "image") ? "image" : "text";
+	json base = defaultElement(kind.c_str());
+	json out = deepMerge(base, in);
+	out["kind"] = kind;
+	if (!out.contains("id") || !out["id"].is_string() || out["id"].get<std::string>().empty())
+		out["id"] = newId("el");
+	if (!out.contains("name") || !out["name"].is_string())
+		out["name"] = kind == "image" ? "Image" : "Text";
+	out["enabled"] = boolOr(out, "enabled", true);
+
+	json p = out.contains("place") && out["place"].is_object() ? out["place"] : json::object();
+	/* before columns were explicit, `order` carried the column index */
+	bool hasCol = p.contains("col") && !p["col"].is_null();
+	json place;
+	place["row"] = clampInt(numOr(p, "row", 0), 0, 19);
+	place["col"] = clampInt(hasCol ? numOr(p, "col", 0) : numOr(p, "order", 0), 0, 19);
+	place["order"] = hasCol ? numOr(p, "order", 0) : 0.0;
+	place["stretch"] = boolOr(p, "stretch", false);
+	place["spanAll"] = boolOr(p, "spanAll", false);
+	place["rowSpan"] = clampInt(numOr(p, "rowSpan", 1), 1, 20);
+	place["colSpan"] = clampInt(numOr(p, "colSpan", 1), 1, 20);
+	if (place["spanAll"].get<bool>()) { place["row"] = 0; place["rowSpan"] = 1; }
+	out["place"] = place;
+
+	if (kind == "text") {
+		if (!out.contains("text") || !out["text"].is_string())
+			out["text"] = "";
+		json snips = json::array();
+		if (out.contains("snippets") && out["snippets"].is_array()) {
+			for (const auto &s : out["snippets"]) {
+				if (!s.is_object()) continue;
+				json o;
+				o["id"] = (s.contains("id") && s["id"].is_string()) ? s["id"] : json(newId("sn"));
+				o["label"] = strOr(s, "label", "");
+				o["text"] = strOr(s, "text", "");
+				snips.push_back(o);
+				if (snips.size() >= 100) break;
+			}
+		}
+		out["snippets"] = snips;
+		out.erase("image");
+	} else {
+		out["image"] = deepMerge(base["image"], out.contains("image") ? out["image"] : json::object());
+		out.erase("text");
+		out.erase("snippets");
+	}
+
+	json g = out["style"]["gradient"];
+	if (!g.is_object() || !g.contains("stops") || !g["stops"].is_array() || g["stops"].size() < 2) {
+		out["style"]["gradient"] = base["style"]["gradient"];
+	} else {
+		json stops = json::array();
+		for (const auto &s : g["stops"]) {
+			if (!s.is_object()) continue;
+			json o;
+			o["color"] = strOr(s, "color", "#ffffff");
+			double pos = numOr(s, "pos", 0);
+			o["pos"] = pos < 0 ? 0 : (pos > 100 ? 100 : pos);
+			double op = numOr(s, "opacity", 1);
+			o["opacity"] = op < 0 ? 0 : (op > 1 ? 1 : op);
+			stops.push_back(o);
+			if (stops.size() >= 24) break;
+		}
+		if (stops.size() < 2) stops = base["style"]["gradient"]["stops"];
+		out["style"]["gradient"]["stops"] = stops;
+	}
+	return out;
+}
+
+/* compact empty rows/columns away, then make the order inside each cell
+   sequential - mirrors normalizePlacement() in server.js */
+void LtState::normalizePlacement(json &els)
+{
+	const char *keys[2] = { "row", "col" };
+	for (int ki = 0; ki < 2; ki++) {
+		const char *key = keys[ki];
+		std::vector<int> used;
+		for (auto &e : els) {
+			int v = e["place"][key].get<int>();
+			if (std::find(used.begin(), used.end(), v) == used.end())
+				used.push_back(v);
+		}
+		std::sort(used.begin(), used.end());
+		for (auto &e : els) {
+			int v = e["place"][key].get<int>();
+			int idx = (int)(std::find(used.begin(), used.end(), v) - used.begin());
+			e["place"][key] = idx;
+		}
+	}
+
+	std::map<std::string, std::vector<size_t>> cells;
+	for (size_t i = 0; i < els.size(); i++) {
+		std::string k = std::to_string(els[i]["place"]["row"].get<int>()) + ":" +
+		                std::to_string(els[i]["place"]["col"].get<int>());
+		cells[k].push_back(i);
+	}
+	for (auto &kv : cells) {
+		std::vector<size_t> &idxs = kv.second;
+		std::sort(idxs.begin(), idxs.end(), [&els](size_t a, size_t b) {
+			return els[a]["place"]["order"].get<double>() < els[b]["place"]["order"].get<double>();
+		});
+		for (size_t n = 0; n < idxs.size(); n++)
+			els[idxs[n]]["place"]["order"] = (double)n;
+	}
+}
+
+/* schema 1 (fixed topline/headline/badge/logo) -> schema 2 (elements).
+   Idempotent: an already-migrated look is only normalized. */
+json LtState::migrateLook(const json &lookIn)
+{
+	json look = lookIn.is_object() ? lookIn : json::object();
+
+	if (look.contains("elements") && look["elements"].is_array()) {
+		json els = json::array();
+		for (const auto &e : look["elements"]) {
+			json n = normalizeElement(e);
+			if (!n.is_null()) els.push_back(n);
+		}
+		if (els.empty()) {
+			ensureDefaultsLoaded();
+			for (const auto &e : g_defaults["look"]["elements"]) {
+				json n = normalizeElement(e);
+				if (!n.is_null()) els.push_back(n);
+			}
+		}
+		normalizePlacement(els);
+		json out;
+		out["schema"] = 2;
+		out["elements"] = els;
+		out["style"] = deepMerge(defaultsStyle(), look.contains("style") ? look["style"] : json::object());
+		return out;
+	}
+
+	json c = look.contains("content") && look["content"].is_object() ? look["content"] : json::object();
+	json st = look.contains("style") && look["style"].is_object() ? look["style"] : json::object();
+	json bars = st.contains("bars") && st["bars"].is_object() ? st["bars"] : json::object();
+	json lay = st.contains("layout") && st["layout"].is_object() ? st["layout"] : json::object();
+	json oldAccent = st.contains("accent") ? st["accent"]
+		: json::parse(R"({"mode":"none","color":"#1c56d6","thickness":6})");
+	bool logoLeft = lay.contains("logoSide") && lay["logoSide"].is_string() &&
+	                lay["logoSide"].get<std::string>() == "left";
+	bool fullWidth = boolOr(lay, "fullWidth", true);
+
+	auto styleFrom = [&](const char *kind, const json &barIn, const json &extra) {
+		json d = defaultElement(kind)["style"];
+		json bar = barIn.is_object() ? barIn : json::object();
+		json grad;
+		grad["enabled"] = bar.contains("gradient") && bar["gradient"].is_object() &&
+			boolOr(bar["gradient"], "enabled", false);
+		grad["type"] = "linear";
+		grad["angle"] = (bar.contains("gradient") && bar["gradient"].is_object())
+			? numOr(bar["gradient"], "angle", 180) : 180.0;
+		grad["shape"] = "ellipse";
+		grad["posX"] = 50;
+		grad["posY"] = 50;
+		json stops = json::array();
+		json s0;
+		s0["color"] = bar.contains("bg") && bar["bg"].is_string() ? bar["bg"] : d["bg"];
+		s0["pos"] = 0;
+		s0["opacity"] = 1;
+		json s1;
+		s1["color"] = (bar.contains("gradient") && bar["gradient"].is_object())
+			? strOr(bar["gradient"], "color2", "#e9edf5") : json("#e9edf5");
+		s1["pos"] = 100;
+		s1["opacity"] = 1;
+		stops.push_back(s0);
+		stops.push_back(s1);
+		grad["stops"] = stops;
+
+		json bgImage = d["bgImage"];
+		if (bar.contains("image") && bar["image"].is_object()) {
+			bgImage["enabled"] = boolOr(bar["image"], "enabled", false);
+			bgImage["url"] = strOr(bar["image"], "url", "");
+			bgImage["fit"] = strOr(bar["image"], "fit", "cover");
+		}
+
+		json mapped = json::object();
+		const char *keys[8] = { "bg", "bgOpacity", "color", "size", "weight", "letterSpacing", "padX", "padY" };
+		for (int i = 0; i < 8; i++) {
+			if (bar.contains(keys[i])) mapped[keys[i]] = bar[keys[i]];
+		}
+		mapped["gradient"] = grad;
+		mapped["bgImage"] = bgImage;
+		return deepMerge(deepMerge(d, mapped), extra);
+	};
+
+	json els = json::array();
+
+	json topline = defaultElement("text");
+	topline["id"] = "el-topline";
+	topline["name"] = "Top line";
+	topline["enabled"] = c.contains("topline") && boolOr(c["topline"], "enabled", true);
+	topline["place"] = json{ { "row", 0 }, { "col", logoLeft ? 1 : 0 }, { "order", 0 },
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+	topline["text"] = c.contains("topline") ? strOr(c["topline"], "text", "") : json("");
+	topline["style"] = styleFrom("text", bars.contains("topline") ? bars["topline"] : json::object(), json::object());
+	els.push_back(topline);
+
+	json badge = defaultElement("text");
+	badge["id"] = "el-badge";
+	badge["name"] = "Badge";
+	badge["enabled"] = c.contains("badge") && boolOr(c["badge"], "enabled", true);
+	badge["place"] = json{ { "row", 0 }, { "col", logoLeft ? 0 : 1 }, { "order", 0 },
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+	badge["text"] = c.contains("badge") ? strOr(c["badge"], "text", "") : json("");
+	badge["style"] = styleFrom("text", bars.contains("badge") ? bars["badge"] : json::object(),
+		json::parse(R"({"align":"center","nowrap":true,"padX":21,"padY":6})"));
+	els.push_back(badge);
+
+	json headline = defaultElement("text");
+	headline["id"] = "el-headline";
+	headline["name"] = "Headline";
+	headline["enabled"] = true;
+	headline["place"] = json{ { "row", 1 }, { "col", logoLeft ? 1 : 0 }, { "order", 0 },
+		{ "stretch", fullWidth }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+	headline["text"] = c.contains("headline") ? strOr(c["headline"], "text", "") : json("");
+	{
+		json extra = json::object();
+		extra["accent"] = oldAccent;
+		headline["style"] = styleFrom("text", bars.contains("headline") ? bars["headline"] : json::object(), extra);
+	}
+	els.push_back(headline);
+
+	json logoBox = bars.contains("logoBox") ? bars["logoBox"] : json::object();
+	json logo = defaultElement("image");
+	logo["id"] = "el-logo";
+	logo["name"] = "Logo";
+	logo["enabled"] = c.contains("logo") && boolOr(c["logo"], "enabled", true);
+	logo["place"] = json{ { "row", 1 }, { "col", logoLeft ? 0 : 1 }, { "order", 0 },
+		{ "stretch", false }, { "spanAll", false }, { "rowSpan", 1 }, { "colSpan", 1 } };
+	{
+		json img = logo["image"];
+		img["url"] = c.contains("logo") ? strOr(c["logo"], "url", "") : json("");
+		img["fit"] = "contain";
+		img["scale"] = c.contains("logo") ? numOr(c["logo"], "scale", 1) : 1.0;
+		logo["image"] = img;
+		json bar = json::object();
+		if (logoBox.contains("bg")) bar["bg"] = logoBox["bg"];
+		if (logoBox.contains("bgOpacity")) bar["bgOpacity"] = logoBox["bgOpacity"];
+		if (logoBox.contains("pad")) {
+			bar["padX"] = logoBox["pad"];
+			bar["padY"] = logoBox["pad"];
+		}
+		json extra = json::object();
+		extra["minWidth"] = logoBox.contains("minWidth") ? logoBox["minWidth"] : json(180);
+		extra["align"] = "center";
+		logo["style"] = styleFrom("image", bar, extra);
+	}
+	els.push_back(logo);
+
+	json norm = json::array();
+	for (const auto &e : els) {
+		json n = normalizeElement(e);
+		if (!n.is_null()) norm.push_back(n);
+	}
+	normalizePlacement(norm);
+
+	json styleOver = json::object();
+	styleOver["direction"] = strOr(st, "direction", "auto");
+	styleOver["textAlign"] = strOr(st, "textAlign", "start");
+	json layout = json::object();
+	layout["anchor"] = strOr(lay, "anchor", "left");
+	layout["fullWidth"] = fullWidth;
+	layout["maxWidth"] = numOr(lay, "maxWidth", 70);
+	layout["sideMargin"] = numOr(lay, "sideMargin", 0);
+	layout["bottomMargin"] = numOr(lay, "bottomMargin", 64);
+	styleOver["layout"] = layout;
+	styleOver["gap"] = numOr(st, "gap", 4);
+	if (st.contains("font")) styleOver["font"] = st["font"];
+	if (st.contains("edges")) styleOver["edges"] = st["edges"];
+	styleOver["shadow"] = numOr(st, "shadow", 40);
+
+	json out;
+	out["schema"] = 2;
+	out["elements"] = norm;
+	out["style"] = deepMerge(defaultsStyle(), styleOver);
+	return out;
+}
+
+json LtState::migratePreset(const json &p)
+{
+	if (!p.is_object())
+		return json();
+	json src = json::object();
+	if (p.contains("elements") && p["elements"].is_array()) {
+		src["elements"] = p["elements"];
+		if (p.contains("style")) src["style"] = p["style"];
+	} else {
+		if (p.contains("content")) src["content"] = p["content"];
+		if (p.contains("style")) src["style"] = p["style"];
+	}
+	json look = migrateLook(src);
+	json out;
+	out["id"] = (p.contains("id") && p["id"].is_string()) ? p["id"] : json(newId("p"));
+	out["name"] = strOr(p, "name", "Preset");
+	out["schema"] = 2;
+	out["elements"] = look["elements"];
+	out["style"] = look["style"];
+	out["anim"] = deepMerge(defaultsAnim(), p.contains("anim") ? p["anim"] : json::object());
+	return out;
 }
 
 /* ---------------------------------------------------------------- utils */
@@ -224,13 +572,6 @@ static long long now_ms()
 		.count();
 }
 
-std::string LtState::newPresetId()
-{
-	static std::mt19937_64 rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
-	std::ostringstream o;
-	o << "p-" << std::hex << (rng() & 0xffffffffffULL);
-	return o.str();
-}
 
 /* ------------------------------------------------------------ lifecycle */
 
@@ -279,18 +620,31 @@ void LtState::loadLocked()
 			return;
 		std::ifstream in(f, std::ios::binary);
 		json saved = json::parse(in, nullptr, true, true);
+		bool wasOld = saved.contains("live") && saved["live"].is_object() &&
+		              !saved["live"].contains("elements");
 		if (saved.contains("live"))
-			st["live"] = deepMerge(defaultsLook(), saved["live"]);
+			st["live"] = migrateLook(saved["live"]);
 		if (saved.contains("pending"))
-			st["pending"] = deepMerge(defaultsLook(), saved["pending"]);
+			st["pending"] = migrateLook(saved["pending"]);
+		else if (saved.contains("live"))
+			st["pending"] = migrateLook(saved["live"]);
+		if (wasOld)
+			lt_log("upgraded saved state to the dynamic element model");
 		if (saved.contains("anim"))
 			st["anim"] = deepMerge(defaultsAnim(), saved["anim"]);
 		if (saved.contains("settings"))
 			st["settings"] = deepMerge(defaultsSettings(), saved["settings"]);
 		st["visible"] = saved.value("visible", false);
 		st["shownAt"] = saved.value("shownAt", 0LL);
-		if (saved.contains("presets") && saved["presets"].is_array())
-			st["presets"] = saved["presets"];
+		if (saved.contains("presets") && saved["presets"].is_array()) {
+			json ps = json::array();
+			for (const auto &p : saved["presets"]) {
+				json m = migratePreset(p);
+				if (!m.is_null())
+					ps.push_back(m);
+			}
+			st["presets"] = ps;
+		}
 		lt_log("restored state from %s", f.string().c_str());
 	} catch (const std::exception &e) {
 		lt_log("could not read saved state (starting fresh): %s", e.what());
@@ -495,12 +849,88 @@ void LtState::revert()
 	broadcastJson({{"type", "pending"}, {"pending", st["pending"]}, {"dirty", false}});
 }
 
+json *LtState::findElement(const std::string &id)
+{
+	if (!st["pending"].contains("elements"))
+		return nullptr;
+	for (auto &e : st["pending"]["elements"]) {
+		if (e.contains("id") && e["id"].is_string() && e["id"].get<std::string>() == id)
+			return &e;
+	}
+	return nullptr;
+}
+
+void LtState::pushPendingLocked()
+{
+	scheduleSaveLocked();
+	broadcastJson({{"type", "pending"}, {"pending", st["pending"]}, {"dirty", isDirtyLocked()}});
+}
+
+/* map a legacy role name (headline/topline/badge/logo) onto a live element */
+static json *elementByRole(json &els, const std::string &role)
+{
+	for (auto &e : els) {
+		if (e.value("id", "") == "el-" + role)
+			return &e;
+	}
+	for (auto &e : els) {
+		std::string n = e.value("name", "");
+		std::string flat;
+		for (char ch : n) {
+			if (!isspace((unsigned char)ch))
+				flat += (char)tolower((unsigned char)ch);
+		}
+		if (flat == role)
+			return &e;
+	}
+	if (role == "headline") {
+		json *best = nullptr;
+		double bestSize = -1;
+		for (auto &e : els) {
+			if (e.value("kind", "") != "text")
+				continue;
+			double sz = e["style"].value("size", 0.0);
+			if (sz > bestSize) { bestSize = sz; best = &e; }
+		}
+		return best;
+	}
+	return nullptr;
+}
+
 void LtState::applyEdit(const json &patch)
 {
 	std::lock_guard<std::recursive_mutex> lk(mtx);
-	st["pending"] = deepMerge(st["pending"], sanitize(patch));
-	scheduleSaveLocked();
-	broadcastJson({{"type", "pending"}, {"pending", st["pending"]}, {"dirty", isDirtyLocked()}});
+	json p = sanitize(patch);
+	if (!p.is_object())
+		p = json::object();
+
+	/* legacy shape { content: { headline: { text } } } from older scripts and
+	   the /api/pending query helpers - route it to the matching element */
+	if (p.contains("content") && p["content"].is_object()) {
+		for (auto it = p["content"].begin(); it != p["content"].end(); ++it) {
+			json *e = elementByRole(st["pending"]["elements"], it.key());
+			if (!e)
+				continue;
+			if (it.value().is_object() && it.value().contains("text") && it.value()["text"].is_string())
+				(*e)["text"] = it.value()["text"];
+			if (it.value().is_object() && it.value().contains("enabled") && it.value()["enabled"].is_boolean())
+				(*e)["enabled"] = it.value()["enabled"];
+		}
+		p.erase("content");
+	}
+	if (p.contains("elements") && p["elements"].is_array()) {
+		json els = json::array();
+		for (const auto &e : p["elements"]) {
+			json n = normalizeElement(e);
+			if (!n.is_null())
+				els.push_back(n);
+		}
+		normalizePlacement(els);
+		st["pending"]["elements"] = els;
+		p.erase("elements");
+	}
+	st["pending"] = deepMerge(st["pending"], p);
+	pushPendingLocked();
 }
 
 bool LtState::commitOnTransition()
@@ -555,28 +985,210 @@ void LtState::handleClientMessage(const json &msg)
 	} else if (t == "preview-anim") {
 		broadcastJson({{"type", "preview-anim"}}, "preview");
 	} else if (t == "reset-style") {
-		st["pending"]["style"] = defaultsLook()["style"];
+		st["pending"]["style"] = defaultsStyle();
 		scheduleSaveLocked();
 		broadcastJson({{"type", "pending"}, {"pending", st["pending"]}, {"dirty", isDirtyLocked()}});
-	} else if (t == "preset-save") {
+	}
+	/* ---- dynamic elements ---- */
+	else if (t == "element-add") {
+		std::string kind = msg.value("kind", "text") == "image" ? "image" : "text";
+		json e = defaultElement(kind.c_str());
+		e["id"] = newId("el");
+		if (msg.contains("name") && msg["name"].is_string())
+			e["name"] = msg["name"];
+		json place = e["place"];
+		place["row"] = msg.contains("row") && msg["row"].is_number() ? (int)msg["row"].get<double>() : 0;
+		place["col"] = msg.contains("col") && msg["col"].is_number() ? (int)msg["col"].get<double>() : 0;
+		place["order"] = 999.0;
+		e["place"] = place;
+		json n = normalizeElement(e);
+		if (!n.is_null()) {
+			st["pending"]["elements"].push_back(n);
+			normalizePlacement(st["pending"]["elements"]);
+			pushPendingLocked();
+		}
+	} else if (t == "element-remove") {
+		std::string id = msg.value("id", "");
+		json keep = json::array();
+		for (const auto &e : st["pending"]["elements"]) {
+			if (e.value("id", "") != id)
+				keep.push_back(e);
+		}
+		if (keep.empty()) {
+			json e = defaultElement("text");
+			e["id"] = newId("el");
+			e["name"] = "Headline";
+			json n = normalizeElement(e);
+			if (!n.is_null())
+				keep.push_back(n);
+		}
+		st["pending"]["elements"] = keep;
+		normalizePlacement(st["pending"]["elements"]);
+		pushPendingLocked();
+	} else if (t == "element-duplicate") {
+		json *src = findElement(msg.value("id", ""));
+		if (src) {
+			json copy = *src;
+			copy["id"] = newId("el");
+			copy["name"] = copy.value("name", std::string("Element")) + " copy";
+			copy["place"]["order"] = copy["place"].value("order", 0.0) + 0.5;
+			json n = normalizeElement(copy);
+			if (!n.is_null()) {
+				st["pending"]["elements"].push_back(n);
+				normalizePlacement(st["pending"]["elements"]);
+				pushPendingLocked();
+			}
+		}
+	} else if (t == "element-update") {
+		std::string id = msg.value("id", "");
+		json *e = findElement(id);
+		if (e) {
+			json merged = deepMerge(*e, sanitize(msg.contains("patch") ? msg["patch"] : json::object()));
+			merged["id"] = (*e)["id"];        /* a patch can never change identity */
+			merged["kind"] = (*e)["kind"];
+			json n = normalizeElement(merged);
+			if (!n.is_null()) {
+				*e = n;
+				normalizePlacement(st["pending"]["elements"]);
+				pushPendingLocked();
+			}
+		}
+	} else if (t == "element-move") {
+		json *e = findElement(msg.value("id", ""));
+		if (e) {
+			std::string dir = msg.value("dir", "");
+			json &pl = (*e)["place"];
+			if (dir == "up") pl["row"] = pl["row"].get<int>() - 1;
+			else if (dir == "down") pl["row"] = pl["row"].get<int>() + 1;
+			else if (dir == "left") pl["col"] = pl["col"].get<int>() - 1;
+			else if (dir == "right") pl["col"] = pl["col"].get<int>() + 1;
+			else if (dir == "first") pl["order"] = pl["order"].get<double>() - 1.5;
+			else if (dir == "last") pl["order"] = pl["order"].get<double>() + 1.5;
+
+			std::string movedId = (*e).value("id", "");
+			if (pl["row"].get<int>() < 0) {
+				for (auto &o : st["pending"]["elements"]) {
+					if (o.value("id", "") != movedId)
+						o["place"]["row"] = o["place"]["row"].get<int>() + 1;
+				}
+				json *me = findElement(movedId);
+				if (me) (*me)["place"]["row"] = 0;
+			}
+			json *me2 = findElement(movedId);
+			if (me2 && (*me2)["place"]["col"].get<int>() < 0) {
+				for (auto &o : st["pending"]["elements"]) {
+					if (o.value("id", "") != movedId)
+						o["place"]["col"] = o["place"]["col"].get<int>() + 1;
+				}
+				json *me3 = findElement(movedId);
+				if (me3) (*me3)["place"]["col"] = 0;
+			}
+			normalizePlacement(st["pending"]["elements"]);
+			pushPendingLocked();
+		}
+	} else if (t == "element-newrow") {
+		json *e = findElement(msg.value("id", ""));
+		if (e) {
+			std::string movedId = (*e).value("id", "");
+			int target = (*e)["place"]["row"].get<int>() + 1;
+			for (auto &o : st["pending"]["elements"]) {
+				if (o.value("id", "") != movedId && o["place"]["row"].get<int>() >= target)
+					o["place"]["row"] = o["place"]["row"].get<int>() + 1;
+			}
+			json *me = findElement(movedId);
+			if (me) {
+				(*me)["place"]["row"] = target;
+				(*me)["place"]["col"] = 0;
+				(*me)["place"]["order"] = 0.0;
+			}
+			normalizePlacement(st["pending"]["elements"]);
+			pushPendingLocked();
+		}
+	}
+
+	/* ---- per-element text snippets (manual preload only) ---- */
+	else if (t == "snippet-save") {
+		json *e = findElement(msg.value("id", ""));
+		if (e && (*e).value("kind", "") == "text") {
+			std::string text = msg.contains("text") && msg["text"].is_string()
+				? msg["text"].get<std::string>() : (*e).value("text", "");
+			std::string label = msg.contains("label") && msg["label"].is_string()
+				? msg["label"].get<std::string>() : text;
+			if (label.size() > 60) label = label.substr(0, 60);
+			if (text.size() > 4000) text = text.substr(0, 4000);
+			if (!(*e).contains("snippets") || !(*e)["snippets"].is_array())
+				(*e)["snippets"] = json::array();
+			json sn;
+			sn["id"] = newId("sn");
+			sn["label"] = label;
+			sn["text"] = text;
+			(*e)["snippets"].push_back(sn);
+			while ((*e)["snippets"].size() > 100)
+				(*e)["snippets"].erase((*e)["snippets"].begin());
+			pushPendingLocked();
+		}
+	} else if (t == "snippet-load") {
+		/* loads into PENDING only - never shows or takes on its own */
+		json *e = findElement(msg.value("id", ""));
+		std::string sid = msg.value("snippetId", "");
+		if (e && (*e).value("kind", "") == "text" && (*e).contains("snippets")) {
+			for (const auto &sn : (*e)["snippets"]) {
+				if (sn.value("id", "") == sid) {
+					(*e)["text"] = sn.value("text", "");
+					pushPendingLocked();
+					break;
+				}
+			}
+		}
+	} else if (t == "snippet-delete") {
+		json *e = findElement(msg.value("id", ""));
+		std::string sid = msg.value("snippetId", "");
+		if (e && (*e).contains("snippets") && (*e)["snippets"].is_array()) {
+			json keep = json::array();
+			for (const auto &sn : (*e)["snippets"]) {
+				if (sn.value("id", "") != sid)
+					keep.push_back(sn);
+			}
+			(*e)["snippets"] = keep;
+			pushPendingLocked();
+		}
+	} else if (t == "snippet-rename") {
+		json *e = findElement(msg.value("id", ""));
+		std::string sid = msg.value("snippetId", "");
+		if (e && (*e).contains("snippets") && (*e)["snippets"].is_array()) {
+			for (auto &sn : (*e)["snippets"]) {
+				if (sn.value("id", "") == sid) {
+					std::string lbl = msg.value("label", sn.value("label", ""));
+					if (lbl.size() > 60) lbl = lbl.substr(0, 60);
+					sn["label"] = lbl;
+					pushPendingLocked();
+					break;
+				}
+			}
+		}
+	}
+	else if (t == "preset-save") {
 		std::string name = msg.value("name", "Preset");
 		if (name.size() > 60)
 			name.resize(60);
-		json p = {{"id", newPresetId()},
+		json p = {{"id", newId("p")},
 			  {"name", name},
-			  {"content", st["pending"]["content"]},
+			  {"schema", 2},
+			  {"elements", st["pending"]["elements"]},
 			  {"style", st["pending"]["style"]},
 			  {"anim", st["anim"]}};
-		st["presets"].push_back(p);
+		st["presets"].push_back(migratePreset(p));
 		scheduleSaveLocked();
 		broadcastJson({{"type", "presets"}, {"presets", st["presets"]}});
 	} else if (t == "preset-update") {
 		std::string id = msg.value("id", "");
 		for (auto &p : st["presets"]) {
 			if (p.value("id", "") == id) {
-				p["content"] = st["pending"]["content"];
+				p["elements"] = st["pending"]["elements"];
 				p["style"] = st["pending"]["style"];
 				p["anim"] = st["anim"];
+				p["schema"] = 2;
+				p.erase("content");
 				break;
 			}
 		}
@@ -584,10 +1196,12 @@ void LtState::handleClientMessage(const json &msg)
 		broadcastJson({{"type", "presets"}, {"presets", st["presets"]}});
 	} else if (t == "preset-load") {
 		std::string id = msg.value("id", "");
-		for (auto &p : st["presets"]) {
+		for (const auto &p : st["presets"]) {
 			if (p.value("id", "") == id) {
-				st["pending"]["content"] = deepMerge(defaultsLook()["content"], p["content"]);
-				st["pending"]["style"] = deepMerge(defaultsLook()["style"], p["style"]);
+				json look = migratePreset(p);
+				st["pending"]["elements"] = look["elements"];
+				st["pending"]["style"] = look["style"];
+				st["pending"]["schema"] = 2;
 				if (p.contains("anim"))
 					st["anim"] = deepMerge(defaultsAnim(), p["anim"]);
 				scheduleSaveLocked();
