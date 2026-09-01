@@ -53,6 +53,25 @@
 
   function safeUrl(u) { return String(u || '').replace(/["\\)]/g, ''); }
 
+  /* getBoundingClientRect() returns the PAINTED box, so a take landing during a
+     pop/slide animation would measure the element at its animated scale and pin
+     the bar too narrow. Divide the scale back out. offsetWidth is not an option:
+     it rounds down, and that lost sub-pixel is what re-wraps the last word. */
+  function rectW(el) {
+    var w = el.getBoundingClientRect().width;
+    var t = getComputedStyle(el).transform;
+    var m = /^matrix(?:3d)?\(\s*([^,]+),/.exec(t || '');
+    var sx = m ? parseFloat(m[1]) : 1;
+    return (sx && Math.abs(sx - 1) > 0.001) ? w / sx : w;
+  }
+  function rectH(el) {
+    var r = el.getBoundingClientRect();
+    var t = getComputedStyle(el).transform;
+    var m = /^matrix\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*([^,]+),/.exec(t || '');
+    var sy = m ? parseFloat(m[1]) : 1;
+    return (sy && Math.abs(sy - 1) > 0.001) ? r.height / sy : r.height;
+  }
+
   var RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
   function visibleElements(look) {
     return (look.elements || []).filter(function (e) { return e && e.enabled !== false; });
@@ -372,6 +391,10 @@
       if (e.place.stretch) cell.dataset.stretch = '1';
     } else {
       box.style.minHeight = Math.round((st.size || 56) * 1.18 + (st.padY || 0) * 2) + 'px';
+      /* remember what the picture is showing NOW, so a swap in the same commit
+         can hold the outgoing copy at those values while it fades */
+      n.prevScale = box.style.getPropertyValue('--img-scale') || undefined;
+      n.prevFit = n.img.style.objectFit || undefined;
       box.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
       n.img.style.objectFit = (e.image && e.image.fit) || 'contain';
     }
@@ -384,6 +407,7 @@
     /* a swap arriving before the previous one finished: drop the old clone and
        cancel its timer, otherwise it strips this swap's classes mid-flight */
     if (line._swapTimer) { clearTimeout(line._swapTimer); line._swapTimer = null; }
+    container.style.height = '';
     var stale = container.querySelectorAll('.line-exit');
     for (var si = 0; si < stale.length; si++) stale[si].remove();
     line.classList.remove('line-enter', 'swap-slide', 'swap-fade');
@@ -392,20 +416,31 @@
        box. Measured with the fractional rect: offsetWidth rounds down, and
        losing that sub-pixel is enough to re-wrap the last word, which shows
        up as the old text "jumping a line" mid-animation. */
-    var r = line.getBoundingClientRect();
+    var lw = rectW(line);
+    var lh = rectH(line);
     var rtl = stage.dataset.dir === 'rtl';
     var clone = line.cloneNode(true);
     clone.className = 'line line-exit ' + cls;
-    clone.style.width = (r.width + 1) + 'px';
-    clone.style.height = Math.ceil(r.height) + 'px';
+    clone.style.width = (lw + 1) + 'px';
+    clone.style.height = Math.ceil(lh) + 'px';
     if (rtl) { clone.style.right = '0'; clone.style.left = 'auto'; }
     else { clone.style.left = '0'; clone.style.right = 'auto'; }
     container.appendChild(clone);
+
+    /* The clone is out of flow, so the container would collapse to the NEW
+       text's height at once and clip the outgoing lines away on frame one.
+       Hold it at whichever is taller until the swap is over. */
+    var h0 = rectH(container);
     line.textContent = newText;
+    container.style.height = '';
+    var h1 = rectH(container);
+    container.style.height = Math.ceil(Math.max(h0, h1)) + 'px';
+
     line.classList.add('line-enter', cls);
     line._swapTimer = setTimeout(function () {
       line._swapTimer = null;
       clone.remove();
+      container.style.height = '';
       line.classList.remove('line-enter', 'swap-slide', 'swap-fade');
     }, (anim ? anim.changeMs : 450) + 120);
   }
@@ -415,10 +450,21 @@
      clearing it outright would leave the box misaligned with its column. */
   function flipWidth(box, mutate, enterLine) {
     var settled = box.dataset.width || '';
-    var w0 = box.getBoundingClientRect().width;
+    var w0 = rectW(box);
+
+    /* A swap arriving inside the previous one's window would otherwise be
+       measured through that swap's pin: .line is a block child with an
+       explicit width, which feeds straight into the box's fit-content size,
+       so both w1 and the new pin would come back as the OLD text's width.
+       w0 is read first because it is what is currently on screen. */
+    if (enterLine) {
+      if (enterLine._widthTimer) { clearTimeout(enterLine._widthTimer); enterLine._widthTimer = null; }
+      enterLine.style.width = '';
+    }
+
     mutate();
     box.style.width = settled;
-    var w1 = box.getBoundingClientRect().width;
+    var w1 = rectW(box);
 
     /* Freeze the INCOMING text at the width it will finally have. While the
        box animates from the old width to the new one it is briefly narrower
@@ -426,9 +472,7 @@
        the length of the animation before snapping back to one. Pinned, it
        simply stays one line and is revealed as the box widens (.txt clips). */
     if (enterLine) {
-      var lw = enterLine.getBoundingClientRect().width;
-      if (enterLine._widthTimer) clearTimeout(enterLine._widthTimer);
-      enterLine.style.width = Math.ceil(lw + 1) + 'px';
+      enterLine.style.width = Math.ceil(rectW(enterLine) + 1) + 'px';
     }
 
     if (Math.abs(w1 - w0) < 2) {
@@ -484,6 +528,10 @@
       n.img.classList.remove('img-enter');
       var clone = n.img.cloneNode(false);
       clone.className = 'img-exit';
+      /* hold the outgoing picture at the size/crop it was shown at, rather
+         than letting it inherit the values just written for the new one */
+      if (n.prevScale !== undefined) clone.style.setProperty('--img-scale', n.prevScale);
+      if (n.prevFit) clone.style.objectFit = n.prevFit;
       n.box.appendChild(clone);
       void n.img.offsetWidth;
       n.img.classList.add('img-enter');
@@ -525,42 +573,60 @@
   /* --------------------------------------------------------- transitions */
 
   function clearAnimTimer() {
-    if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+    if (animTimer) { clearTimeout(animTimer); animTimer = null; restoreAnimDurations(); }
   }
 
   /* the last element starts staggerMs * maxStagger after the first, so the
      whole sequence needs that much longer than a single element's duration */
-  function inTotal() { return anim.inMs + anim.staggerMs * maxStagger + 80; }
-  function outTotal() { return anim.outMs + anim.staggerMs * maxStagger + 80; }
+  function totalFor(ms) { return ms + anim.staggerMs * maxStagger + 80; }
+  function inTotal(ms) { return totalFor(ms === undefined ? anim.inMs : ms); }
+  function outTotal(ms) { return totalFor(ms === undefined ? anim.outMs : ms); }
 
-  function playIn(done) {
+  /* quickOutIn shortens these; if it is pre-empted the configured values must
+     still come back, or the whole show keeps running at the shortened speed */
+  function restoreAnimDurations() {
+    if (!anim) return;
+    stage.style.setProperty('--in-ms', anim.inMs + 'ms');
+    stage.style.setProperty('--out-ms', anim.outMs + 'ms');
+  }
+
+  function playIn(done, ms) {
     clearAnimTimer();
+    if (ms !== undefined) stage.style.setProperty('--in-ms', ms + 'ms');
     stage.dataset.in = anim.inStyle;
     stage.classList.remove('anim-out', 'hidden');
     void stage.offsetWidth;
     stage.classList.add('anim-in');
     animTimer = setTimeout(function () {
+      animTimer = null;
       stage.classList.remove('anim-in');
+      restoreAnimDurations();
       if (done) done();
-    }, inTotal());
+    }, inTotal(ms));
   }
 
-  function playOut(done) {
+  function playOut(done, ms) {
     clearAnimTimer();
+    if (ms !== undefined) stage.style.setProperty('--out-ms', ms + 'ms');
     stage.dataset.out = anim.outStyle === 'auto' ? anim.inStyle : anim.outStyle;
     stage.classList.remove('anim-in');
     void stage.offsetWidth;
     stage.classList.add('anim-out');
     outInFlight = true;
     animTimer = setTimeout(function () {
+      animTimer = null;
       stage.classList.add('hidden');
       stage.classList.remove('anim-out');
       outInFlight = false;
       /* a commit that landed mid-hide was held back so it could not appear on
-         air inside the fading bar — apply it now that nothing is visible */
-      if (deferredLook) { updateDom(deferredLook, false); deferredLook = null; }
-      if (done) done();
-    }, outTotal());
+         air inside the fading bar — apply it now that nothing is visible, and
+         tell the caller, so a structural take does not overwrite it with the
+         older look it captured when it started */
+      var deferred = deferredLook;
+      deferredLook = null;
+      if (deferred) updateDom(deferred, false);
+      if (done) done(deferred);
+    }, outTotal(ms));
   }
 
   function showInstant() {
@@ -588,16 +654,14 @@
 
   /* quick out -> rebuild -> quick in (for structural changes) */
   function quickOutIn(look) {
-    var s = stage.style;
-    s.setProperty('--out-ms', Math.max(160, Math.round(anim.outMs * 0.55)) + 'ms');
-    playOut(function () {
-      updateDom(look, false);
-      s.setProperty('--in-ms', Math.max(200, Math.round(anim.inMs * 0.6)) + 'ms');
-      playIn(function () {
-        s.setProperty('--in-ms', anim.inMs + 'ms');
-        s.setProperty('--out-ms', anim.outMs + 'ms');
-      });
-    });
+    var outMs = Math.max(160, Math.round(anim.outMs * 0.55));
+    var inMs = Math.max(200, Math.round(anim.inMs * 0.6));
+    playOut(function (deferred) {
+      /* a newer commit landed while we were animating out and has already been
+         applied — never put the older captured look back over it */
+      if (!deferred) updateDom(look, false);
+      playIn(restoreAnimDurations, inMs);
+    }, outMs);
   }
 
   function applyCommit(look, animate) {

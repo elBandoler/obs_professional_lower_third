@@ -170,6 +170,9 @@ body.bg-green { background: #00b140; }
   transition-duration: var(--change-ms, 450ms);
   transition-timing-function: var(--ease);
 }
+#stage.prop-anim .txt {
+  transition: height var(--change-ms, 450ms) var(--ease);
+}
 #stage.prop-anim .box.img-box img {
   transition: transform var(--change-ms, 450ms) var(--ease),
               opacity var(--change-ms, 450ms) var(--ease);
