@@ -6,6 +6,7 @@
 #include <thread>
 #include <condition_variable>
 #include <chrono>
+#include <vector>
 
 #include "json.hpp"
 
@@ -66,6 +67,12 @@ private:
 	/* element / snippet helpers used by handleClientMessage */
 	nlohmann::json *findElement(const std::string &id);
 	void pushPendingLocked();
+	/* saved texts: a library kept OUT of live/pending so saving one never
+	   dirties the state and preset-load cannot destroy it */
+	nlohmann::json &snippetsForLocked(const std::string &id);
+	void pushSnippetsLocked();
+	static nlohmann::json sanitizeSnippetStore(const nlohmann::json &raw,
+	                                          const std::vector<std::string> *knownIds);
 
 	bool isDirtyLocked();
 	nlohmann::json publicStateLocked();

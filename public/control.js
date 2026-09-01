@@ -109,6 +109,12 @@
   function findEl(id) {
     return elements().filter(function (e) { return e.id === id; })[0];
   }
+  /* saved texts live beside the look, not inside it, so saving one never
+     dirties the state and loading a preset never wipes them */
+  function snippetsOf(id) {
+    var all = (S && S.snippets) || {};
+    return Array.isArray(all[id]) ? all[id] : [];
+  }
 
   function sendEl(id, path, value) {
     var e = findEl(id);
@@ -437,7 +443,7 @@
       var e = findEl(id);
       if (!e || e.kind !== 'text') return;
       var list = el('div', 'snip-list');
-      (e.snippets || []).forEach(function (s) {
+      snippetsOf(id).forEach(function (s) {
         var b = el('button', 'snip', s.label || s.text || '—');
         b.title = 'Load this text into the preview (then press SHOW or TAKE)';
         b.addEventListener('click', function () {
@@ -481,7 +487,7 @@
       var st = e.style || {};
       return [e.id, e.kind, e.name, e.place.row, e.place.col, e.place.order,
               e.place.spanAll ? 1 : 0,
-              (e.snippets || []).length,
+              snippetsOf(e.id).length,
               (st.gradient && st.gradient.enabled) ? 1 : 0,
               st.gradient && st.gradient.type,
               ((st.gradient && st.gradient.stops) || []).length,
@@ -729,7 +735,7 @@
     var host = $('#simple-texts');
     if (!host || !S) return;
     var texts = elements().filter(function (e) { return e.kind === 'text' && e.enabled !== false; });
-    var sig = texts.map(function (e) { return e.id + ':' + (e.snippets || []).length + ':' + e.name; }).join('|');
+    var sig = texts.map(function (e) { return e.id + ':' + snippetsOf(e.id).length + ':' + e.name; }).join('|');
     if (!force && sig === simpleSig) {
       simpleSyncs.forEach(function (s) { s(); });
       return;
@@ -1241,6 +1247,7 @@
     else if (t === 'anim') { S.anim = msg.anim; reapplyInFlight(); syncAll(); }
     else if (t === 'settings') { S.settings = msg.settings; reapplyInFlight(); syncAll(); }
     else if (t === 'presets') { S.presets = msg.presets; renderPresets(); }
+    else if (t === 'snippets') { S.snippets = msg.snippets; renderElements(false); renderSimple(false); }
     else if (t === 'commit') { S.live = msg.live; refreshMeta(); }
     else if (t === 'show') { S.live = msg.live; S.visible = true; S.shownAt = msg.shownAt || Date.now(); refreshMeta(); }
     else if (t === 'hide') { S.visible = false; refreshMeta(); }

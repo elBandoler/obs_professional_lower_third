@@ -205,16 +205,10 @@ function normalizeElement(el) {
 
   if (kind === 'text') {
     out.text = typeof out.text === 'string' ? out.text : '';
-    out.snippets = Array.isArray(out.snippets)
-      ? out.snippets.slice(0, 100).map(function (s) {
-          if (!s || typeof s !== 'object') return null;
-          return {
-            id: String(s.id || newId('sn')),
-            label: String(s.label === undefined ? '' : s.label).slice(0, 60),
-            text: String(s.text === undefined ? '' : s.text).slice(0, 4000),
-          };
-        }).filter(Boolean)
-      : [];
+    /* Saved texts are NOT part of the look: keeping them here would mark the
+       state dirty on every save and let preset-load wipe the operator's bank.
+       They live in state.snippets, keyed by element id. */
+    delete out.snippets;
     delete out.image;
   } else {
     out.image = deepMerge(base.image, out.image || {});
@@ -423,7 +417,42 @@ let state = {
   visible: false,
   shownAt: 0,
   presets: defaultPresets(),
+  /* elementId -> [{id,label,text}] — a text library, deliberately outside
+     live/pending so saving one never dirties the state or reaches air, and
+     loading a preset never destroys it */
+  snippets: {},
 };
+
+function sanitizeSnippetStore(raw, knownIds) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  let buckets = 0;
+  for (const key of Object.keys(raw)) {
+    if (buckets >= 64) break;
+    if (knownIds && !knownIds.has(key)) continue;   // drop orphans at load time
+    const list = Array.isArray(raw[key]) ? raw[key] : [];
+    const clean = list.slice(0, 60).map(function (sn) {
+      if (!sn || typeof sn !== 'object') return null;
+      return {
+        id: String(sn.id || newId('sn')),
+        label: String(sn.label === undefined ? '' : sn.label).slice(0, 60),
+        text: String(sn.text === undefined ? '' : sn.text).slice(0, 4000),
+      };
+    }).filter(Boolean);
+    if (clean.length) { out[key] = clean; buckets++; }
+  }
+  return out;
+}
+
+function snippetsFor(id) {
+  if (!state.snippets[id]) state.snippets[id] = [];
+  return state.snippets[id];
+}
+
+function pushSnippets() {
+  persist();
+  broadcast({ type: 'snippets', snippets: state.snippets });
+}
 
 function loadState() {
   try {
@@ -441,6 +470,24 @@ function loadState() {
     if (Array.isArray(saved.presets)) {
       state.presets = saved.presets.map(migratePreset).filter(Boolean);
     }
+
+    /* saved texts used to hang off each element — lift them into the store */
+    const harvested = {};
+    for (const look of [saved.pending, saved.live]) {
+      if (!look || !Array.isArray(look.elements)) continue;
+      for (const e of look.elements) {
+        if (e && e.id && Array.isArray(e.snippets) && e.snippets.length && !harvested[e.id]) {
+          harvested[e.id] = e.snippets;
+        }
+      }
+    }
+    const known = new Set(
+      state.pending.elements.map(function (e) { return e.id; })
+        .concat(state.live.elements.map(function (e) { return e.id; })));
+    state.snippets = sanitizeSnippetStore(
+      Object.assign(harvested, (saved.snippets && typeof saved.snippets === 'object') ? saved.snippets : {}),
+      known);
+
     console.log('[lower-thirds] Restored state from ' + STATE_FILE +
       (wasOld ? ' (upgraded to the dynamic element model)' : ''));
   } catch (e) {
@@ -477,6 +524,7 @@ function publicState() {
     visible: state.visible,
     shownAt: state.shownAt,
     presets: state.presets,
+    snippets: state.snippets,
     dirty: isDirty(),
   };
 }
@@ -719,38 +767,44 @@ function handleMessage(client, msg) {
     }
   }
 
-  /* ---- per-element text snippets (manual preload only) ---- */
+  /* ---- saved texts (a library, kept out of live/pending on purpose) ---- */
   else if (t === 'snippet-save') {
     const el = state.pending.elements.find((e) => e.id === msg.id);
     if (el && el.kind === 'text') {
       const text = typeof msg.text === 'string' ? msg.text : el.text;
-      const label = String(msg.label || text || 'Snippet').slice(0, 60);
-      if (!Array.isArray(el.snippets)) el.snippets = [];
-      el.snippets.push({ id: newId('sn'), label: label, text: String(text).slice(0, 4000) });
-      if (el.snippets.length > 100) el.snippets = el.snippets.slice(-100);
-      pushPending();
+      if (String(text).trim()) {
+        const list = snippetsFor(el.id);
+        list.push({
+          id: newId('sn'),
+          label: String(msg.label || text).slice(0, 60),
+          text: String(text).slice(0, 4000),
+        });
+        if (list.length > 60) state.snippets[el.id] = list.slice(-60);
+        pushSnippets();
+      }
     }
   }
   else if (t === 'snippet-load') {
-    /* loads into PENDING only — never shows or takes on its own */
+    /* fills PENDING only — never shows or takes on its own */
     const el = state.pending.elements.find((e) => e.id === msg.id);
-    if (el && el.kind === 'text' && Array.isArray(el.snippets)) {
-      const sn = el.snippets.find((s) => s.id === msg.snippetId);
+    const list = state.snippets[msg.id];
+    if (el && el.kind === 'text' && Array.isArray(list)) {
+      const sn = list.find((s) => s.id === msg.snippetId);
       if (sn) { el.text = sn.text; pushPending(); }
     }
   }
   else if (t === 'snippet-delete') {
-    const el = state.pending.elements.find((e) => e.id === msg.id);
-    if (el && Array.isArray(el.snippets)) {
-      el.snippets = el.snippets.filter((s) => s.id !== msg.snippetId);
-      pushPending();
+    const list = state.snippets[msg.id];
+    if (Array.isArray(list)) {
+      state.snippets[msg.id] = list.filter((s) => s.id !== msg.snippetId);
+      pushSnippets();
     }
   }
   else if (t === 'snippet-rename') {
-    const el = state.pending.elements.find((e) => e.id === msg.id);
-    if (el && Array.isArray(el.snippets)) {
-      const sn = el.snippets.find((s) => s.id === msg.snippetId);
-      if (sn) { sn.label = String(msg.label || sn.label).slice(0, 60); pushPending(); }
+    const list = state.snippets[msg.id];
+    if (Array.isArray(list)) {
+      const sn = list.find((s) => s.id === msg.snippetId);
+      if (sn) { sn.label = String(msg.label || sn.label).slice(0, 60); pushSnippets(); }
     }
   }
 

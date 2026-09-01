@@ -231,19 +231,8 @@ json LtState::normalizeElement(const json &in)
 	if (kind == "text") {
 		if (!out.contains("text") || !out["text"].is_string())
 			out["text"] = "";
-		json snips = json::array();
-		if (out.contains("snippets") && out["snippets"].is_array()) {
-			for (const auto &s : out["snippets"]) {
-				if (!s.is_object()) continue;
-				json o;
-				o["id"] = (s.contains("id") && s["id"].is_string()) ? s["id"] : json(newId("sn"));
-				o["label"] = strOr(s, "label", "");
-				o["text"] = strOr(s, "text", "");
-				snips.push_back(o);
-				if (snips.size() >= 100) break;
-			}
-		}
-		out["snippets"] = snips;
+		/* saved texts live in st["snippets"], not on the element */
+		out.erase("snippets");
 		out.erase("image");
 	} else {
 		out["image"] = deepMerge(base["image"], out.contains("image") ? out["image"] : json::object());
@@ -590,6 +579,7 @@ void LtState::init(const std::string &configDir, BroadcastFn broadcast, StudioMo
 	st["visible"] = false;
 	st["shownAt"] = 0;
 	st["presets"] = defaultsPresets();
+	st["snippets"] = json::object();
 
 	loadLocked();
 	scheduleAutoHideLocked();
@@ -645,6 +635,38 @@ void LtState::loadLocked()
 			}
 			st["presets"] = ps;
 		}
+
+		/* saved texts used to hang off each element - lift them into the store */
+		json harvested = json::object();
+		for (const char *key : { "pending", "live" }) {
+			if (!saved.contains(key) || !saved[key].is_object())
+				continue;
+			const json &look = saved[key];
+			if (!look.contains("elements") || !look["elements"].is_array())
+				continue;
+			for (const auto &e : look["elements"]) {
+				if (!e.is_object() || !e.contains("id") || !e["id"].is_string())
+					continue;
+				std::string eid = e["id"].get<std::string>();
+				if (e.contains("snippets") && e["snippets"].is_array() &&
+				    !e["snippets"].empty() && !harvested.contains(eid))
+					harvested[eid] = e["snippets"];
+			}
+		}
+		if (saved.contains("snippets") && saved["snippets"].is_object()) {
+			for (auto it = saved["snippets"].begin(); it != saved["snippets"].end(); ++it)
+				harvested[it.key()] = it.value();
+		}
+		std::vector<std::string> known;
+		for (const char *key : { "pending", "live" }) {
+			if (!st[key].contains("elements"))
+				continue;
+			for (const auto &e : st[key]["elements"]) {
+				if (e.contains("id") && e["id"].is_string())
+					known.push_back(e["id"].get<std::string>());
+			}
+		}
+		st["snippets"] = sanitizeSnippetStore(harvested, &known);
 		lt_log("restored state from %s", f.string().c_str());
 	} catch (const std::exception &e) {
 		lt_log("could not read saved state (starting fresh): %s", e.what());
@@ -744,6 +766,7 @@ json LtState::publicStateLocked()
 	out["visible"] = st["visible"];
 	out["shownAt"] = st["shownAt"];
 	out["presets"] = st["presets"];
+	out["snippets"] = st.contains("snippets") ? st["snippets"] : json::object();
 	out["dirty"] = isDirtyLocked();
 	out["native"] = true;
 	return out;
@@ -858,6 +881,61 @@ json *LtState::findElement(const std::string &id)
 			return &e;
 	}
 	return nullptr;
+}
+
+json LtState::sanitizeSnippetStore(const json &raw, const std::vector<std::string> *knownIds)
+{
+	json out = json::object();
+	if (!raw.is_object())
+		return out;
+	size_t buckets = 0;
+	for (auto it = raw.begin(); it != raw.end(); ++it) {
+		if (buckets >= 64)
+			break;
+		if (knownIds &&
+		    std::find(knownIds->begin(), knownIds->end(), it.key()) == knownIds->end())
+			continue;                    /* drop orphans at load time */
+		if (!it.value().is_array())
+			continue;
+		json clean = json::array();
+		for (const auto &sn : it.value()) {
+			if (!sn.is_object())
+				continue;
+			json o;
+			o["id"] = (sn.contains("id") && sn["id"].is_string()) ? sn["id"] : json(newId("sn"));
+			std::string label = sn.contains("label") && sn["label"].is_string()
+				? sn["label"].get<std::string>() : std::string();
+			std::string text = sn.contains("text") && sn["text"].is_string()
+				? sn["text"].get<std::string>() : std::string();
+			if (label.size() > 60) label = label.substr(0, 60);
+			if (text.size() > 4000) text = text.substr(0, 4000);
+			o["label"] = label;
+			o["text"] = text;
+			clean.push_back(o);
+			if (clean.size() >= 60)
+				break;
+		}
+		if (!clean.empty()) {
+			out[it.key()] = clean;
+			buckets++;
+		}
+	}
+	return out;
+}
+
+json &LtState::snippetsForLocked(const std::string &id)
+{
+	if (!st.contains("snippets") || !st["snippets"].is_object())
+		st["snippets"] = json::object();
+	if (!st["snippets"].contains(id) || !st["snippets"][id].is_array())
+		st["snippets"][id] = json::array();
+	return st["snippets"][id];
+}
+
+void LtState::pushSnippetsLocked()
+{
+	scheduleSaveLocked();
+	broadcastJson({{"type", "snippets"}, {"snippets", st["snippets"]}});
 }
 
 void LtState::pushPendingLocked()
@@ -1106,33 +1184,38 @@ void LtState::handleClientMessage(const json &msg)
 		}
 	}
 
-	/* ---- per-element text snippets (manual preload only) ---- */
+	/* ---- saved texts (a library, kept out of live/pending on purpose) ---- */
 	else if (t == "snippet-save") {
 		json *e = findElement(msg.value("id", ""));
 		if (e && (*e).value("kind", "") == "text") {
 			std::string text = msg.contains("text") && msg["text"].is_string()
 				? msg["text"].get<std::string>() : (*e).value("text", "");
-			std::string label = msg.contains("label") && msg["label"].is_string()
-				? msg["label"].get<std::string>() : text;
-			if (label.size() > 60) label = label.substr(0, 60);
-			if (text.size() > 4000) text = text.substr(0, 4000);
-			if (!(*e).contains("snippets") || !(*e)["snippets"].is_array())
-				(*e)["snippets"] = json::array();
-			json sn;
-			sn["id"] = newId("sn");
-			sn["label"] = label;
-			sn["text"] = text;
-			(*e)["snippets"].push_back(sn);
-			while ((*e)["snippets"].size() > 100)
-				(*e)["snippets"].erase((*e)["snippets"].begin());
-			pushPendingLocked();
+			bool blank = text.find_first_not_of(" \t\r\n") == std::string::npos;
+			if (!blank) {
+				std::string label = msg.contains("label") && msg["label"].is_string()
+					? msg["label"].get<std::string>() : text;
+				if (label.size() > 60) label = label.substr(0, 60);
+				if (text.size() > 4000) text = text.substr(0, 4000);
+				std::string eid = (*e).value("id", "");
+				json &list = snippetsForLocked(eid);
+				json sn;
+				sn["id"] = newId("sn");
+				sn["label"] = label;
+				sn["text"] = text;
+				list.push_back(sn);
+				while (list.size() > 60)
+					list.erase(list.begin());
+				pushSnippetsLocked();
+			}
 		}
 	} else if (t == "snippet-load") {
-		/* loads into PENDING only - never shows or takes on its own */
+		/* fills PENDING only - never shows or takes on its own */
 		json *e = findElement(msg.value("id", ""));
+		std::string eid = msg.value("id", "");
 		std::string sid = msg.value("snippetId", "");
-		if (e && (*e).value("kind", "") == "text" && (*e).contains("snippets")) {
-			for (const auto &sn : (*e)["snippets"]) {
+		if (e && (*e).value("kind", "") == "text" && st.contains("snippets") &&
+		    st["snippets"].contains(eid) && st["snippets"][eid].is_array()) {
+			for (const auto &sn : st["snippets"][eid]) {
 				if (sn.value("id", "") == sid) {
 					(*e)["text"] = sn.value("text", "");
 					pushPendingLocked();
@@ -1141,27 +1224,29 @@ void LtState::handleClientMessage(const json &msg)
 			}
 		}
 	} else if (t == "snippet-delete") {
-		json *e = findElement(msg.value("id", ""));
+		std::string eid = msg.value("id", "");
 		std::string sid = msg.value("snippetId", "");
-		if (e && (*e).contains("snippets") && (*e)["snippets"].is_array()) {
+		if (st.contains("snippets") && st["snippets"].contains(eid) &&
+		    st["snippets"][eid].is_array()) {
 			json keep = json::array();
-			for (const auto &sn : (*e)["snippets"]) {
+			for (const auto &sn : st["snippets"][eid]) {
 				if (sn.value("id", "") != sid)
 					keep.push_back(sn);
 			}
-			(*e)["snippets"] = keep;
-			pushPendingLocked();
+			st["snippets"][eid] = keep;
+			pushSnippetsLocked();
 		}
 	} else if (t == "snippet-rename") {
-		json *e = findElement(msg.value("id", ""));
+		std::string eid = msg.value("id", "");
 		std::string sid = msg.value("snippetId", "");
-		if (e && (*e).contains("snippets") && (*e)["snippets"].is_array()) {
-			for (auto &sn : (*e)["snippets"]) {
+		if (st.contains("snippets") && st["snippets"].contains(eid) &&
+		    st["snippets"][eid].is_array()) {
+			for (auto &sn : st["snippets"][eid]) {
 				if (sn.value("id", "") == sid) {
 					std::string lbl = msg.value("label", sn.value("label", ""));
 					if (lbl.size() > 60) lbl = lbl.substr(0, 60);
 					sn["label"] = lbl;
-					pushPendingLocked();
+					pushSnippetsLocked();
 					break;
 				}
 			}
