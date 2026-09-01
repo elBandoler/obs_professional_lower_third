@@ -20,3 +20,6 @@ plugin/dist/
 Thumbs.db
 .DS_Store
 *.log
+
+# scratch files from tooling/agents
+_*
