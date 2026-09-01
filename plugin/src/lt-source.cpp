@@ -1,7 +1,12 @@
 /* "Lower Third" source — a thin wrapper around OBS's browser source pointed
  * at the plugin's own overlay URL, so users just add the source with no
- * URL copying. Role property selects the program (live) or preview
- * (pending-state mirror) rendering. */
+ * URL copying.
+ *
+ * There is deliberately NO preview role here. A source lives in a scene, and
+ * any scene can be transitioned to program, so a source that renders pending
+ * edits is a way to put unfinished text on air, not a preview. The preview
+ * lives in the dock (which can never reach air); for a bigger one, open
+ * /overlay?role=preview in an ordinary browser window outside OBS. */
 
 #include <obs-module.h>
 #include <cstdio>
@@ -21,12 +26,8 @@ static const char *lt_src_get_name(void *)
 
 static void lt_src_apply(struct lt_source *s, obs_data_t *settings)
 {
-	const char *role = obs_data_get_string(settings, "role");
-	bool preview = role && strcmp(role, "preview") == 0;
-
 	char url[256];
-	snprintf(url, sizeof(url), "http://127.0.0.1:%d/overlay%s", lt_server_port(),
-		 preview ? "?role=preview" : "");
+	snprintf(url, sizeof(url), "http://127.0.0.1:%d/overlay", lt_server_port());
 
 	obs_data_t *cs = obs_data_create();
 	obs_data_set_string(cs, "url", url);
@@ -125,15 +126,17 @@ static void lt_src_enum_active(void *data, obs_source_enum_proc_t enum_callback,
 static obs_properties_t *lt_src_properties(void *)
 {
 	obs_properties_t *props = obs_properties_create();
-	obs_property_t *p = obs_properties_add_list(props, "role", "Role", OBS_COMBO_TYPE_LIST,
-						    OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, "Program (what is on air)", "program");
-	obs_property_list_add_string(p, "Preview (pending changes — never put this on air)", "preview");
+	obs_properties_add_text(props, "lt_note",
+		"This source shows what is on air.\n\n"
+		"Edit in the Lower Thirds dock and press SHOW to put changes on air.",
+		OBS_TEXT_INFO);
 	return props;
 }
 
 static void lt_src_defaults(obs_data_t *settings)
 {
+	/* a source saved by an older build may still carry role=preview; it is
+	   ignored now, so such a source quietly becomes a normal program one */
 	obs_data_set_default_string(settings, "role", "program");
 }
 
