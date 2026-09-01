@@ -222,6 +222,17 @@
       input = el('input');
       input.type = 'color';
       input.addEventListener('input', function () { spec.set(input.value); });
+    } else if (spec.type === 'fontpick') {
+      input = el('input');
+      input.type = 'text';
+      input.setAttribute('list', 'fontlist');
+      input.placeholder = spec.placeholder || '(default font)';
+      input.addEventListener('change', function () { spec.set(input.value.trim()); });
+      var clr = el('button', null, '⟲');
+      clr.title = 'Use the default font';
+      clr.addEventListener('click', function () { input.value = ''; spec.set(''); });
+      ctl.appendChild(input);
+      ctl.appendChild(clr);
     } else if (spec.type === 'imagepick') {
       thumb = el('img', 'pick-thumb');
       thumb.alt = '';
@@ -244,7 +255,7 @@
       });
     }
 
-    if (spec.type !== 'slider' && spec.type !== 'imagepick') ctl.appendChild(input);
+    if (spec.type !== 'slider' && spec.type !== 'imagepick' && spec.type !== 'fontpick') ctl.appendChild(input);
 
     function sync() {
       var vis = !spec.showIf || !!spec.showIf();
@@ -691,6 +702,10 @@
 
     if (e.kind === 'text') {
       add({ type: 'subhead', label: 'TYPE' });
+      add({ type: 'fontpick', label: 'Font',
+        title: 'Font for this element only. Leave empty to follow the default font set under FONTS.',
+        get: function () { return dig(findEl(id) || {}, 'style.fontFamily'); },
+        set: function (v) { sendEl(id, 'style.fontFamily', v); } });
       add({ type: 'slider', label: 'Size', min: 8, max: 160, step: 1, unit: 'px',
         get: function () { return dig(findEl(id) || {}, 'style.size'); }, set: function (v) { sendEl(id, 'style.size', v); } });
       add({ type: 'slider', label: 'Weight', min: 100, max: 900, step: 100,
@@ -848,7 +863,7 @@
     { sec: 'layout', type: 'slider', label: 'Bottom margin', min: 0, max: 400, step: 2, unit: 'px', get: g('style.layout.bottomMargin'), set: s('style.layout.bottomMargin') },
     { sec: 'layout', type: 'slider', label: 'Gap', min: 0, max: 40, step: 1, unit: 'px', get: g('style.gap'), set: s('style.gap') },
 
-    { sec: 'type', type: 'text', label: 'Font stack', get: g('style.font.family'), set: s('style.font.family') },
+    { sec: 'type', type: 'text', label: 'Default font stack', title: 'Used by every element that has no font of its own', get: g('style.font.family'), set: s('style.font.family') },
     { sec: 'type', type: 'text', label: 'Font CSS URL', placeholder: 'https://fonts.googleapis.com/css2?family=Heebo…', get: g('style.font.customCssUrl'), set: s('style.font.customCssUrl') },
 
     { sec: 'edges', type: 'select', label: 'Edge style', options: [{ v: 'square', l: 'Square' }, { v: 'rounded', l: 'Rounded' }, { v: 'chamfer', l: 'Slanted' }], get: g('style.edges.style'), set: s('style.edges.style') },
@@ -984,7 +999,7 @@
     var pick = el('input');
     pick.type = 'text';
     pick.setAttribute('list', 'fontlist');
-    pick.placeholder = 'type to search fonts on this PC…';
+    pick.placeholder = 'default font — type to search fonts on this PC…';
     pick.addEventListener('change', function () { if (pick.value.trim()) applyFontFamily(pick.value.trim()); });
     pctl.appendChild(pick);
     pickRow.appendChild(pctl);

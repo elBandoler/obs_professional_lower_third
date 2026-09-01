@@ -247,6 +247,10 @@ json LtState::normalizeElement(const json &in)
 		out.erase("snippets");
 	}
 
+	/* "" means: inherit the look's default font */
+	if (!out["style"].contains("fontFamily") || !out["style"]["fontFamily"].is_string())
+		out["style"]["fontFamily"] = "";
+
 	json g = out["style"]["gradient"];
 	if (!g.is_object() || !g.contains("stops") || !g["stops"].is_array() || g["stops"].size() < 2) {
 		out["style"]["gradient"] = base["style"]["gradient"];

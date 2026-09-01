@@ -324,6 +324,11 @@
 
     box.style.background = boxBackground(st);
     box.style.color = st.color;
+    /* a per-element family falls back to the look's default stack, so an
+       uploaded or missing font still lands on something sensible */
+    box.style.fontFamily = st.fontFamily
+      ? '"' + String(st.fontFamily).replace(/["\\]/g, '') + '", ' + (look.style.font.family || 'sans-serif')
+      : '';
     box.style.fontSize = st.size + 'px';
     box.style.fontWeight = st.weight;
     box.style.letterSpacing = st.letterSpacing + 'px';

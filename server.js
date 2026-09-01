@@ -219,6 +219,9 @@ function normalizeElement(el) {
     delete out.snippets;
   }
 
+  /* '' means: inherit the look's default font */
+  out.style.fontFamily = typeof out.style.fontFamily === 'string' ? out.style.fontFamily : '';
+
   const g = out.style && out.style.gradient;
   if (!g || !Array.isArray(g.stops) || g.stops.length < 2) {
     out.style.gradient = clone(base.style.gradient);

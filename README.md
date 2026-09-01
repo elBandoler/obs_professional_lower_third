@@ -135,10 +135,14 @@ Advanced sections:
   strip, each with its own position and opacity), **background image** (upload or URL,
   cover/contain/stretch/tile — the colour acts as a tint over the picture, lower its opacity
   to reveal more image), accent strip (top/bottom/side).
-- **Typography** — **pick any font installed on the PC** (searchable list), **upload font
-  files** (.ttf/.otf/.woff/.woff2 — stored with the overlay, usable immediately), raw font
-  stack, custom font CSS URL (e.g. Google Fonts — needs internet at runtime),
-  and per-element size/weight/letter-spacing/line-height/padding.
+- **Fonts** — a **default font** for the whole lower third, plus a **per-element font**: each
+  text element has its own *Font* box (same searchable list of fonts installed on the PC and
+  fonts you uploaded). Leave it empty and the element follows the default; the ⟲ button puts
+  it back. A per-element font still falls back to the default stack, so Hebrew keeps
+  rendering even if the chosen font has no Hebrew glyphs.
+  You can also **upload font files** (.ttf/.otf/.woff/.woff2 — stored with the overlay, usable
+  immediately) or point at a font CSS URL (e.g. Google Fonts — needs internet at runtime).
+  Size, weight, letter-spacing, line-height and padding are per element too.
 - **Edges & effects** — global square / rounded (radius) / slanted (amount) and shadow.
   Any element can override the global edge style with its own.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
