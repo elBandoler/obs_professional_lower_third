@@ -1350,11 +1350,15 @@
     updateCockpit();
   }, 700);
 
-  /* ---- shrink the cockpit once the operator scrolls into the controls ---- */
+  /* ---- shrink the cockpit once the operator scrolls into the controls ----
+     ...and straight away on a short dock: docked at the bottom of OBS the
+     panel is often only ~500px tall, where a full-size cockpit would take 400
+     of them and leave nothing to edit in. */
   function updateCockpit() {
-    var compact = window.scrollY > 40;
+    var compact = window.innerHeight < 620 || window.scrollY > 40;
     document.body.classList.toggle('cockpit-compact', compact);
   }
+  window.addEventListener('resize', updateCockpit);
   window.addEventListener('scroll', updateCockpit, { passive: true });
   updateCockpit();
 
