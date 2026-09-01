@@ -413,21 +413,44 @@
   /* Animate a box between its old and new natural width, then hand the width
      back to the layout — applyElementStyle may have pinned it to 100% and
      clearing it outright would leave the box misaligned with its column. */
-  function flipWidth(box, mutate) {
+  function flipWidth(box, mutate, enterLine) {
     var settled = box.dataset.width || '';
     var w0 = box.getBoundingClientRect().width;
     mutate();
     box.style.width = settled;
     var w1 = box.getBoundingClientRect().width;
-    if (Math.abs(w1 - w0) < 2) return;
+
+    /* Freeze the INCOMING text at the width it will finally have. While the
+       box animates from the old width to the new one it is briefly narrower
+       than the new text needs, and the text would wrap into several lines for
+       the length of the animation before snapping back to one. Pinned, it
+       simply stays one line and is revealed as the box widens (.txt clips). */
+    if (enterLine) {
+      var lw = enterLine.getBoundingClientRect().width;
+      if (enterLine._widthTimer) clearTimeout(enterLine._widthTimer);
+      enterLine.style.width = Math.ceil(lw + 1) + 'px';
+    }
+
+    if (Math.abs(w1 - w0) < 2) {
+      if (enterLine) enterLine.style.width = '';
+      return;
+    }
     box.style.width = w0 + 'px';
     void box.offsetWidth;
     box.style.width = w1 + 'px';
+
+    var done = (anim ? anim.changeMs : 450) + 80;
     if (box._widthTimer) clearTimeout(box._widthTimer);
     box._widthTimer = setTimeout(function () {
       box._widthTimer = null;
       box.style.width = box.dataset.width || '';
-    }, (anim ? anim.changeMs : 450) + 80);
+    }, done);
+    if (enterLine) {
+      enterLine._widthTimer = setTimeout(function () {
+        enterLine._widthTimer = null;
+        enterLine.style.width = '';
+      }, done);
+    }
   }
 
   function updateText(e, animate) {
@@ -441,7 +464,7 @@
         /* width is dictated by the layout, not the text */
         swapText(n.txt, n.line, newText, mode);
       } else {
-        flipWidth(n.box, function () { swapText(n.txt, n.line, newText, mode); });
+        flipWidth(n.box, function () { swapText(n.txt, n.line, newText, mode); }, n.line);
       }
     } else {
       n.line.textContent = newText;
