@@ -6,6 +6,7 @@
 #include <map>
 #include <random>
 #include <sstream>
+#include <thread>
 #include <stdexcept>
 #include <vector>
 
@@ -487,7 +488,12 @@ json LtState::migratePreset(const json &p)
 	json look = migrateLook(src);
 	json out;
 	out["id"] = (p.contains("id") && p["id"].is_string()) ? p["id"] : json(newId("p"));
-	out["name"] = strOr(p, "name", "Preset");
+	std::string pname = strOr(p, "name", "Preset").get<std::string>();
+	if (pname.empty())
+		pname = "Preset";
+	if (pname.size() > 60)
+		pname = pname.substr(0, 60);
+	out["name"] = pname;
 	out["schema"] = 2;
 	out["elements"] = look["elements"];
 	out["style"] = look["style"];
@@ -621,9 +627,11 @@ void LtState::loadLocked()
 		if (wasOld)
 			lt_log("upgraded saved state to the dynamic element model");
 		if (saved.contains("anim"))
-			st["anim"] = deepMerge(defaultsAnim(), saved["anim"]);
+			st["anim"] = deepMerge(defaultsAnim(),
+				saved["anim"].is_object() ? saved["anim"] : json::object());
 		if (saved.contains("settings"))
-			st["settings"] = deepMerge(defaultsSettings(), saved["settings"]);
+			st["settings"] = deepMerge(defaultsSettings(),
+				saved["settings"].is_object() ? saved["settings"] : json::object());
 		st["visible"] = saved.value("visible", false);
 		st["shownAt"] = saved.value("shownAt", 0LL);
 		if (saved.contains("presets") && saved["presets"].is_array()) {
@@ -669,7 +677,15 @@ void LtState::loadLocked()
 		st["snippets"] = sanitizeSnippetStore(harvested, &known);
 		lt_log("restored state from %s", f.string().c_str());
 	} catch (const std::exception &e) {
-		lt_log("could not read saved state (starting fresh): %s", e.what());
+		/* Keep the damaged file — the next save would otherwise overwrite the
+		   only copy of the operator's presets and saved texts. */
+		std::error_code ec;
+		fs::path f = fs::path(dir) / "state.json";
+		fs::path bak = fs::path(dir) /
+			("state.json.corrupt-" + std::to_string(now_ms()) + ".bak");
+		fs::copy_file(f, bak, fs::copy_options::overwrite_existing, ec);
+		lt_log("could not read saved state (starting fresh): %s%s", e.what(),
+		       ec ? "" : (" A copy was kept at " + bak.string()).c_str());
 	}
 }
 
@@ -678,15 +694,55 @@ void LtState::saveNowLocked()
 	try {
 		fs::path f = fs::path(dir) / "state.json";
 		fs::path tmp = fs::path(dir) / "state.json.tmp";
+		std::string body = st.dump(2);
+
+		/* Write and VERIFY before replacing anything. An ofstream reports
+		   failure only through its state flags, so an unchecked write (full
+		   disk, quota, I/O error) would happily leave a truncated file that
+		   then replaced the operator's only good state. */
 		{
 			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-			out << st.dump(2);
+			if (!out) {
+				lt_log("failed to save state: cannot open %s", tmp.string().c_str());
+				return;
+			}
+			out << body;
+			out.flush();
+			out.close();
+			if (!out) {
+				lt_log("failed to save state: write to %s failed", tmp.string().c_str());
+				std::error_code rm;
+				fs::remove(tmp, rm);
+				return;
+			}
 		}
+		std::error_code sz;
+		auto written = fs::file_size(tmp, sz);
+		if (sz || written != body.size()) {
+			lt_log("failed to save state: %s is %llu bytes, expected %llu",
+			       tmp.string().c_str(), (unsigned long long)written,
+			       (unsigned long long)body.size());
+			std::error_code rm;
+			fs::remove(tmp, rm);
+			return;
+		}
+
+		/* Replace atomically. Never remove the destination first: that opens a
+		   window where a second failure leaves no state file at all. */
 		std::error_code ec;
 		fs::rename(tmp, f, ec);
 		if (ec) {
-			fs::remove(f, ec);
-			fs::rename(tmp, f, ec);
+			for (int attempt = 0; attempt < 3 && ec; attempt++) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(40));
+				ec.clear();
+				fs::rename(tmp, f, ec);
+			}
+		}
+		if (ec) {
+			lt_log("failed to replace %s (%s) - previous state left intact",
+			       f.string().c_str(), ec.message().c_str());
+			std::error_code rm;
+			fs::remove(tmp, rm);
 		}
 	} catch (const std::exception &e) {
 		lt_log("failed to save state: %s", e.what());
@@ -945,10 +1001,19 @@ void LtState::pushPendingLocked()
 }
 
 /* map a legacy role name (headline/topline/badge/logo) onto a live element */
-static json *elementByRole(json &els, const std::string &role)
+static json *elementByRole(json &els, const std::string &roleIn)
 {
+	/* match case-insensitively, exactly like the JS engine */
+	std::string role;
+	for (char ch : roleIn)
+		role += (char)tolower((unsigned char)ch);
+
 	for (auto &e : els) {
-		if (e.value("id", "") == "el-" + role)
+		std::string id = e.value("id", "");
+		std::string flatId;
+		for (char ch : id)
+			flatId += (char)tolower((unsigned char)ch);
+		if (flatId == "el-" + role)
 			return &e;
 	}
 	for (auto &e : els) {
@@ -989,7 +1054,10 @@ void LtState::applyEdit(const json &patch)
 			json *e = elementByRole(st["pending"]["elements"], it.key());
 			if (!e)
 				continue;
-			if (it.value().is_object() && it.value().contains("text") && it.value()["text"].is_string())
+			/* only a text element has text — writing it onto an image would
+			   persist a malformed element */
+			if (it.value().is_object() && it.value().contains("text") &&
+			    it.value()["text"].is_string() && (*e).value("kind", "") == "text")
 				(*e)["text"] = it.value()["text"];
 			if (it.value().is_object() && it.value().contains("enabled") && it.value()["enabled"].is_boolean())
 				(*e)["enabled"] = it.value()["enabled"];

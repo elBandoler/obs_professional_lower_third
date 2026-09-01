@@ -426,10 +426,17 @@ let state = {
 function sanitizeSnippetStore(raw, knownIds) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
+  /* Buckets whose element is currently absent are KEPT: an element removed or
+     replaced by a preset load must not take the operator's text bank with it.
+     Known ids are kept first so the 64-bucket cap can only ever drop the
+     oldest unreferenced ones. */
+  const keys = Object.keys(raw);
+  const ordered = knownIds
+    ? keys.filter((k) => knownIds.has(k)).concat(keys.filter((k) => !knownIds.has(k)))
+    : keys;
   let buckets = 0;
-  for (const key of Object.keys(raw)) {
+  for (const key of ordered) {
     if (buckets >= 64) break;
-    if (knownIds && !knownIds.has(key)) continue;   // drop orphans at load time
     const list = Array.isArray(raw[key]) ? raw[key] : [];
     const clean = list.slice(0, 60).map(function (sn) {
       if (!sn || typeof sn !== 'object') return null;
@@ -473,14 +480,19 @@ function loadState() {
 
     /* saved texts used to hang off each element — lift them into the store */
     const harvested = {};
-    for (const look of [saved.pending, saved.live]) {
-      if (!look || !Array.isArray(look.elements)) continue;
+    const harvestFrom = (look) => {
+      if (!look || !Array.isArray(look.elements)) return;
       for (const e of look.elements) {
-        if (e && e.id && Array.isArray(e.snippets) && e.snippets.length && !harvested[e.id]) {
-          harvested[e.id] = e.snippets;
+        if (e && e.id && Array.isArray(e.snippets) && e.snippets.length) {
+          harvested[e.id] = (harvested[e.id] || []).concat(e.snippets);
         }
       }
-    }
+    };
+    harvestFrom(saved.pending);
+    harvestFrom(saved.live);
+    /* presets carry copies of the elements, so texts saved while a preset was
+       loaded were stored in there too — collect them before they are stripped */
+    if (Array.isArray(saved.presets)) saved.presets.forEach(harvestFrom);
     const known = new Set(
       state.pending.elements.map(function (e) { return e.id; })
         .concat(state.live.elements.map(function (e) { return e.id; })));
@@ -491,7 +503,15 @@ function loadState() {
     console.log('[lower-thirds] Restored state from ' + STATE_FILE +
       (wasOld ? ' (upgraded to the dynamic element model)' : ''));
   } catch (e) {
-    console.error('[lower-thirds] Could not read saved state (starting fresh):', e.message);
+    /* Keep the unreadable file: the next save would otherwise overwrite the
+       only copy of the operator's presets and saved texts. */
+    let kept = '';
+    try {
+      const bak = STATE_FILE + '.corrupt-' + Date.now() + '.bak';
+      fs.copyFileSync(STATE_FILE, bak);
+      kept = ' A copy was kept at ' + bak;
+    } catch (e2) { /* nothing more we can do */ }
+    console.error('[lower-thirds] Could not read saved state (starting fresh): ' + e.message + kept);
   }
 }
 

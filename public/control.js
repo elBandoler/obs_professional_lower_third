@@ -19,7 +19,9 @@
     return n;
   }
 
+  var REPLACING = { revert: 1, 'preset-load': 1, 'snippet-load': 1, 'reset-style': 1, 'preset-restore': 1 };
   function send(msg) {
+    if (msg && REPLACING[msg.type]) clearAllInFlight();
     if (sock && sock.readyState === 1) sock.send(JSON.stringify(msg));
   }
 
@@ -73,14 +75,20 @@
      just set, so every in-flight edit is re-applied on top of server state
      until the server has echoed it back. */
   var inFlight = {};
+
+  /* Only edits that have NOT reached the server yet are re-applied. Once a
+     value is sent the server is the authority again, so an explicit action
+     (discard, preset-load, snippet recall) is never fought by a stale local
+     value. Replacing actions also clear the guard outright. */
   function markInFlight(kind, id, path, value) {
-    inFlight[(id || '') + '|' + path] = { kind: kind, id: id, path: path, value: value, until: Date.now() + 1200 };
+    inFlight[(id || '') + '|' + path] = { kind: kind, id: id, path: path, value: value };
   }
+  function clearInFlight(key) { delete inFlight[key]; }
+  function clearAllInFlight() { inFlight = {}; }
+
   function reapplyInFlight() {
-    var now = Date.now();
     Object.keys(inFlight).forEach(function (k) {
       var f = inFlight[k];
-      if (f.until < now) { delete inFlight[k]; return; }
       if (f.kind === 'element') {
         var e = findEl(f.id);
         if (e) poke(e, f.path, f.value);
@@ -91,15 +99,33 @@
     });
   }
 
+  /* leading + trailing throttle: the first move goes out at once so the
+     preview tracks a drag, the rest are coalesced */
+  var lastSent = {};
+  function throttled(key, fn) {
+    var now = Date.now();
+    var since = now - (lastSent[key] || 0);
+    if (since >= 60 && !throttleTimers[key]) {
+      lastSent[key] = now;
+      fn();
+      return;
+    }
+    if (throttleTimers[key]) clearTimeout(throttleTimers[key]);
+    throttleTimers[key] = setTimeout(function () {
+      delete throttleTimers[key];
+      lastSent[key] = Date.now();
+      fn();
+    }, Math.max(0, 60 - since));
+  }
+
   function sendField(path, value) {
     var r = rootFor(path);
     poke(r.obj, r.key, value);            // optimistic, so the UI feels instant
     markInFlight('global', null, path, value);
-    if (throttleTimers[path]) clearTimeout(throttleTimers[path]);
-    throttleTimers[path] = setTimeout(function () {
-      delete throttleTimers[path];
+    throttled(path, function () {
+      clearInFlight('|' + path);
       send({ type: r.kind, patch: nestedPatch(r.key, value) });
-    }, 60);
+    });
     refreshMeta();
   }
 
@@ -122,11 +148,10 @@
     poke(e, path, value);                 // optimistic
     markInFlight('element', id, path, value);
     var key = id + '|' + path;
-    if (throttleTimers[key]) clearTimeout(throttleTimers[key]);
-    throttleTimers[key] = setTimeout(function () {
-      delete throttleTimers[key];
+    throttled(key, function () {
+      clearInFlight(key);
       send({ type: 'element-update', id: id, patch: nestedPatch(path, value) });
-    }, 60);
+    });
     refreshMeta();
   }
 
@@ -364,9 +389,14 @@
             try { h.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
             h.removeEventListener('pointermove', move);
             h.removeEventListener('pointerup', up);
+            h.removeEventListener('pointercancel', up);
+            sync();
           }
           h.addEventListener('pointermove', move);
           h.addEventListener('pointerup', up);
+          /* touch/pen drags can be cancelled (palm rejection, scroll takeover);
+             without this the editor would stay frozen forever */
+          h.addEventListener('pointercancel', up);
         });
         handles.appendChild(h);
 
@@ -438,10 +468,15 @@
     var id = elem.id;
     var wrap = el('div', 'snip-wrap');
 
+    var lastSig = null;
     function render() {
-      wrap.innerHTML = '';
       var e = findEl(id);
-      if (!e || e.kind !== 'text') return;
+      if (!e || e.kind !== 'text') { wrap.innerHTML = ''; lastSig = null; return; }
+      /* rebuilding under the operator's finger swallows the click */
+      var sig = snippetsOf(id).map(function (s) { return s.id + ':' + s.label; }).join('|');
+      if (sig === lastSig) return;
+      lastSig = sig;
+      wrap.innerHTML = '';
       var list = el('div', 'snip-list');
       snippetsOf(id).forEach(function (s) {
         var b = el('button', 'snip', s.label || s.text || '—');
@@ -485,7 +520,9 @@
   function elementSignature() {
     return elements().map(function (e) {
       var st = e.style || {};
-      return [e.id, e.kind, e.name, e.place.row, e.place.col, e.place.order,
+      /* NOTE: e.name is deliberately absent — it changes on every keystroke and
+         rebuilding the list would steal focus from the Name field */
+      return [e.id, e.kind, e.place.row, e.place.col, e.place.order,
               e.place.spanAll ? 1 : 0,
               snippetsOf(e.id).length,
               (st.gradient && st.gradient.enabled) ? 1 : 0,
@@ -574,8 +611,10 @@
     move.appendChild(del);
     addNode(move);
 
+    /* no scheduleRebuild here: the card header is refreshed by syncHead(), and
+       rebuilding the list would replace this input and steal focus mid-word */
     add({ type: 'text', label: 'Name', get: function () { return findEl(id) ? findEl(id).name : ''; },
-      set: function (v) { sendEl(id, 'name', v); scheduleRebuild(); } });
+      set: function (v) { sendEl(id, 'name', v); } });
 
     if (e.kind === 'text') {
       add({ type: 'text', label: 'Text', get: function () { var x = findEl(id); return x ? x.text : ''; },
@@ -588,7 +627,8 @@
         set: function (v) { sendEl(id, 'image.url', v); } });
       add({ type: 'select', label: 'Image fit', options: [{ v: 'contain', l: 'Contain' }, { v: 'cover', l: 'Cover' }, { v: 'fill', l: 'Stretch' }],
         get: function () { return dig(findEl(id) || {}, 'image.fit'); }, set: function (v) { sendEl(id, 'image.fit', v); } });
-      add({ type: 'slider', label: 'Image size', min: 0.2, max: 2, step: 0.05, unit: '×',
+      add({ type: 'slider', label: 'Image size', min: 0.2, max: 1, step: 0.05, unit: '×',
+        title: 'Size inside its box — give the element more room with padding or min width to make the picture bigger',
         get: function () { return dig(findEl(id) || {}, 'image.scale'); }, set: function (v) { sendEl(id, 'image.scale', v); } });
     }
 
@@ -683,7 +723,20 @@
         get: function () { return dig(findEl(id) || {}, 'style.accent.thickness'); }, set: function (v) { sendEl(id, 'style.accent.thickness', v); } });
     }
 
-    return { card: card, sync: function () { syncs.forEach(function (s) { s(); }); } };
+    function syncHead() {
+      var cur = findEl(id);
+      if (!cur) return;
+      if (en !== document.activeElement) en.checked = cur.enabled !== false;
+      var label = cur.name || (cur.kind === 'image' ? 'Image' : 'Text');
+      if (nm.textContent !== label) nm.textContent = label;
+      var where = cur.place.spanAll ? 'full' : ('r' + (cur.place.row + 1) + '·c' + (cur.place.col + 1));
+      if (pos.textContent !== where) pos.textContent = where;
+    }
+
+    return {
+      card: card,
+      sync: function () { syncHead(); syncs.forEach(function (s) { s(); }); },
+    };
   }
 
   var openCards = {};
@@ -1216,6 +1269,14 @@
   function applyMode() {
     document.body.classList.toggle('mode-simple', MODE === 'simple');
     $('#mode-toggle').textContent = MODE === 'simple' ? 'ADVANCED' : 'SIMPLE';
+    /* QUICK is the whole of SIMPLE — if it was collapsed in ADVANCED the panel
+       would otherwise come up empty with no header left to click */
+    if (MODE === 'simple') {
+      var quick = $('#sec-simple');
+      if (quick) quick.open = true;
+      var presets = $('#sec-presets');
+      if (presets) presets.open = true;
+    }
   }
   $('#mode-toggle').addEventListener('click', function () {
     MODE = MODE === 'simple' ? 'advanced' : 'simple';

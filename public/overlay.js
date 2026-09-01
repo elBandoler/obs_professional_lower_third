@@ -27,6 +27,9 @@
   var animTimer = null;
   var grid = null;      // the .lt-grid node
   var nodes = {};       // element id -> { cell, box, line, txt, img }
+  var maxStagger = 0;   // highest --i in the current layout
+  var outInFlight = false;
+  var deferredLook = null;
 
   var EASINGS = {
     smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -209,16 +212,31 @@
     };
   }
 
-  function gridTemplates(L) {
+  function gridTemplates(L, look) {
+    var flex = {};
+    for (var k in L.stretchCols) flex[k] = true;
+
+    /* Nothing marked stretch but the block must fill the width: hand the slack
+       to the column holding the biggest text, never to a logo column — auto
+       columns would otherwise share it equally and balloon the logo. */
+    if (!Object.keys(flex).length && look && look.style.layout.fullWidth) {
+      var best = null, bestSize = -1;
+      L.els.forEach(function (e) {
+        if (e.kind !== 'text') return;
+        var sz = (e.style && e.style.size) || 0;
+        if (sz > bestSize) { bestSize = sz; best = e; }
+      });
+      if (best) flex[best.place.col] = true;
+    }
+
     var colDefs = [];
     for (var c = 0; c < L.cols; c++) {
-      colDefs.push(L.stretchCols[c] ? 'minmax(0, 1fr)' : 'auto');
+      colDefs.push(flex[c] ? 'minmax(0, 1fr)' : 'auto');
     }
-    /* nothing stretches -> let the last column take the slack so the block
-       still fills the layout width when "full width" is on */
     return {
       columns: colDefs.join(' '),
       rows: new Array(L.rows).fill('auto').join(' '),
+      flexCols: flex,
     };
   }
 
@@ -243,9 +261,11 @@
     lt.innerHTML = '';
     grid = document.createElement('div');
     grid.className = 'lt-grid';
-    var tpl = gridTemplates(L);
+    var tpl = gridTemplates(L, look);
     grid.style.gridTemplateColumns = tpl.columns;
     grid.style.gridTemplateRows = tpl.rows;
+    L.flexCols = tpl.flexCols;
+    grid._flexCols = tpl.flexCols;
 
     /* stagger order: bottom row first, then left to right */
     var maxRow = L.rows - 1;
@@ -289,6 +309,7 @@
       grid.appendChild(cell);
     });
 
+    maxStagger = maxI;
     stage.style.setProperty('--n', (maxI + 1).toFixed(2));
     lt.appendChild(grid);
   }
@@ -313,10 +334,12 @@
        auto-sized column: that column is exactly as wide as its widest member,
        so filling keeps stacked side elements (badge over logo) flush. In a
        flexible (1fr) column a non-stretching bar hugs its own text instead. */
-    var inFlexCol = !!(L && L.stretchCols[e.place.col]);
+    var inFlexCol = !!(L && (L.flexCols || L.stretchCols)[e.place.col]);
     var cellKey = (e.place.spanAll ? 0 : e.place.row) + ':' + e.place.col;
     var sharesCell = !!(L && L.cells[cellKey] && L.cells[cellKey].els.length > 1);
-    box.style.width = (e.place.stretch || (!inFlexCol && !sharesCell)) ? '100%' : '';
+    var wantWidth = (e.place.stretch || (!inFlexCol && !sharesCell)) ? '100%' : '';
+    box.dataset.width = wantWidth;
+    if (!box._widthTimer) box.style.width = wantWidth;   // never fight a running flip
     box.style.flex = e.place.stretch ? '1 1 auto' : '0 0 auto';
 
     /* edges: per element, or inherited from the global look */
@@ -347,6 +370,13 @@
 
   function swapText(container, line, newText, mode) {
     var cls = mode === 'crossfade' ? 'swap-fade' : 'swap-slide';
+    /* a swap arriving before the previous one finished: drop the old clone and
+       cancel its timer, otherwise it strips this swap's classes mid-flight */
+    if (line._swapTimer) { clearTimeout(line._swapTimer); line._swapTimer = null; }
+    var stale = container.querySelectorAll('.line-exit');
+    for (var si = 0; si < stale.length; si++) stale[si].remove();
+    line.classList.remove('line-enter', 'swap-slide', 'swap-fade');
+    void line.offsetWidth;
     /* Freeze the outgoing text's geometry before the new text can resize the
        box. Measured with the fractional rect: offsetWidth rounds down, and
        losing that sub-pixel is enough to re-wrap the last word, which shows
@@ -362,23 +392,31 @@
     container.appendChild(clone);
     line.textContent = newText;
     line.classList.add('line-enter', cls);
-    setTimeout(function () {
+    line._swapTimer = setTimeout(function () {
+      line._swapTimer = null;
       clone.remove();
       line.classList.remove('line-enter', 'swap-slide', 'swap-fade');
     }, (anim ? anim.changeMs : 450) + 120);
   }
 
-  /* animate a box between its old and new natural width */
+  /* Animate a box between its old and new natural width, then hand the width
+     back to the layout — applyElementStyle may have pinned it to 100% and
+     clearing it outright would leave the box misaligned with its column. */
   function flipWidth(box, mutate) {
+    var settled = box.dataset.width || '';
     var w0 = box.getBoundingClientRect().width;
     mutate();
-    box.style.width = '';
+    box.style.width = settled;
     var w1 = box.getBoundingClientRect().width;
     if (Math.abs(w1 - w0) < 2) return;
     box.style.width = w0 + 'px';
     void box.offsetWidth;
     box.style.width = w1 + 'px';
-    setTimeout(function () { box.style.width = ''; }, (anim ? anim.changeMs : 450) + 80);
+    if (box._widthTimer) clearTimeout(box._widthTimer);
+    box._widthTimer = setTimeout(function () {
+      box._widthTimer = null;
+      box.style.width = box.dataset.width || '';
+    }, (anim ? anim.changeMs : 450) + 80);
   }
 
   function updateText(e, animate) {
@@ -406,12 +444,18 @@
     if (n.img.dataset.src === target) return;
     n.img.dataset.src = target;
     if (animate && n.img.src) {
+      if (n.img._swapTimer) { clearTimeout(n.img._swapTimer); n.img._swapTimer = null; }
+      var stale = n.box.querySelectorAll('.img-exit');
+      for (var si = 0; si < stale.length; si++) stale[si].remove();
+      n.img.classList.remove('img-enter');
       var clone = n.img.cloneNode(false);
       clone.className = 'img-exit';
       n.box.appendChild(clone);
+      void n.img.offsetWidth;
       n.img.classList.add('img-enter');
       n.img.src = target;
-      setTimeout(function () {
+      n.img._swapTimer = setTimeout(function () {
+        n.img._swapTimer = null;
         clone.remove();
         n.img.classList.remove('img-enter');
       }, (anim ? anim.changeMs : 450) + 120);
@@ -434,6 +478,7 @@
     }
 
     var L = layoutOf(look);
+    if (grid && grid._flexCols) L.flexCols = grid._flexCols;
     L.els.forEach(function (e) {
       applyElementStyle(e, look, L);
       if (e.kind === 'text') updateText(e, animate);
@@ -449,8 +494,10 @@
     if (animTimer) { clearTimeout(animTimer); animTimer = null; }
   }
 
-  function inTotal() { return anim.inMs + anim.staggerMs * 3 + 80; }
-  function outTotal() { return anim.outMs + anim.staggerMs * 3 + 80; }
+  /* the last element starts staggerMs * maxStagger after the first, so the
+     whole sequence needs that much longer than a single element's duration */
+  function inTotal() { return anim.inMs + anim.staggerMs * maxStagger + 80; }
+  function outTotal() { return anim.outMs + anim.staggerMs * maxStagger + 80; }
 
   function playIn(done) {
     clearAnimTimer();
@@ -470,20 +517,28 @@
     stage.classList.remove('anim-in');
     void stage.offsetWidth;
     stage.classList.add('anim-out');
+    outInFlight = true;
     animTimer = setTimeout(function () {
       stage.classList.add('hidden');
       stage.classList.remove('anim-out');
+      outInFlight = false;
+      /* a commit that landed mid-hide was held back so it could not appear on
+         air inside the fading bar — apply it now that nothing is visible */
+      if (deferredLook) { updateDom(deferredLook, false); deferredLook = null; }
       if (done) done();
     }, outTotal());
   }
 
   function showInstant() {
     clearAnimTimer();
+    outInFlight = false;
     stage.classList.remove('anim-in', 'anim-out', 'hidden');
   }
 
   function hideInstant() {
     clearAnimTimer();
+    outInFlight = false;
+    deferredLook = null;
     stage.classList.remove('anim-in', 'anim-out');
     stage.classList.add('hidden');
   }
@@ -513,6 +568,8 @@
 
   function applyCommit(look, animate) {
     var canAnimate = animate && anim && anim.changeStyle !== 'instant';
+    /* still sliding off screen: hold the new look until it is really gone */
+    if (ROLE === 'program' && outInFlight) { deferredLook = look; return; }
     if (ROLE === 'program' && !isShown) { updateDom(look, false); return; }
     if (!canAnimate) { updateDom(look, false); return; }
     if (current && structureOf(current) !== structureOf(look)) {
@@ -556,9 +613,10 @@
 
     if (t === 'show') {
       if (ROLE !== 'program') return;
-      if (isShown) {
+      if (isShown && !outInFlight) {
         applyCommit(msg.live, msg.animate);
       } else {
+        if (outInFlight) { clearAnimTimer(); outInFlight = false; deferredLook = null; }
         updateDom(msg.live, false);
         isShown = true;
         if (msg.animate) playIn(); else showInstant();
