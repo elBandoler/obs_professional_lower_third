@@ -584,6 +584,14 @@
     /* ---- header ---- */
     var sum = el('summary', 'el-head');
 
+    /* Drag handle. Pointer events rather than HTML5 drag-and-drop: the
+       browser embedded in OBS has already proved it disagrees with a normal
+       one about newer layout features, and DnD is the flakiest of them. */
+    var grip = el('span', 'el-grip', '⠿');
+    grip.title = 'Drag to reorder — within a row, or into another row';
+    grip.addEventListener('pointerdown', function (ev) { beginDrag(ev, card, id); });
+    grip.addEventListener('click', function (ev) { ev.stopPropagation(); ev.preventDefault(); });
+
     var en = el('input', 'el-en');
     en.type = 'checkbox';
     en.checked = e.enabled !== false;
@@ -595,6 +603,7 @@
     var kindTag = el('span', 'el-kind', e.kind === 'image' ? 'IMG' : 'TXT');
     var pos = el('span', 'el-pos', 'r' + (e.place.row + 1) + '·c' + (e.place.col + 1));
 
+    sum.appendChild(grip);
     sum.appendChild(en);
     sum.appendChild(nm);
     sum.appendChild(kindTag);
@@ -813,9 +822,126 @@
   var openTab = {};
   var selectedId = null;
 
+  /* ---------------------------------------------------------- drag to sort
+     Walks the rendered list to work out which row the pointer is over and how
+     many cards of that row sit above it, then asks the server to place the
+     element at that index. The server keeps the row's column slots when the
+     move stays inside one row, so reordering never disturbs other rows. */
+  var drag = null;
+  var DRAG_DEADZONE = 6;   /* px of movement before a press counts as a drag */
+  var DROP_TOL = 24;       /* px outside the list before a drop is abandoned */
+
+  function dropSlots(skipCard) {
+    /* [{row, index, y}] - every gap the dragged card could land in, in
+       document order. The card being carried is left out entirely, so `index`
+       counts only the OTHER cards of that row - which is exactly the basis the
+       server splices against. Counting it here pushed every downward move one
+       slot too far. */
+    var host = $('#el-list');
+    var slots = [];
+    if (!host) return slots;
+    var row = null, idx = 0;
+    var kids = host.children;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.classList.contains('row-head')) {
+        row = k.dataset.row;
+        idx = 0;
+        var hr = k.getBoundingClientRect();
+        slots.push({ row: row === 'full' ? 'full' : parseInt(row, 10), index: 0, y: hr.bottom, node: k });
+      } else if (k.classList.contains('el-card') && row !== null) {
+        if (k === skipCard) continue;
+        var r = k.getBoundingClientRect();
+        idx++;
+        slots.push({ row: row === 'full' ? 'full' : parseInt(row, 10), index: idx, y: r.bottom, node: k });
+      }
+    }
+    return slots;
+  }
+
+  function beginDrag(ev, card, id) {
+    if (drag) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var line = el('div', 'drop-line');
+    drag = { id: id, card: card, line: line, slot: null, pointerId: ev.pointerId,
+             moved: false, x0: ev.clientX, y0: ev.clientY, target: ev.target };
+    card.classList.add('dragging');
+    try { ev.target.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+
+    function clearLine() {
+      if (line.parentNode) line.parentNode.removeChild(line);
+      card.classList.remove('drag-void');
+    }
+
+    function move(e2) {
+      if (!drag || e2.pointerId !== drag.pointerId) return;
+      /* a pointerup we never saw (dock lost focus, a dialog stole the pointer)
+         would otherwise leave the card dragging under a bare cursor */
+      if (e2.buttons === 0) { finish(false); return; }
+      if (!drag.moved) {
+        if (Math.abs(e2.clientX - drag.x0) + Math.abs(e2.clientY - drag.y0) < DRAG_DEADZONE) return;
+        drag.moved = true;
+      }
+      var host = $('#el-list');
+      var lr = host ? host.getBoundingClientRect() : null;
+      var outside = !lr ||
+        e2.clientY < lr.top - DROP_TOL || e2.clientY > lr.bottom + DROP_TOL ||
+        e2.clientX < lr.left - DROP_TOL || e2.clientX > lr.right + DROP_TOL;
+      var slots = outside ? [] : dropSlots(card);
+      if (!slots.length) {
+        /* carried away from the list - releasing here abandons the move */
+        drag.slot = null;
+        clearLine();
+        card.classList.add('drag-void');
+        return;
+      }
+      card.classList.remove('drag-void');
+      var best = slots[0], bestD = Math.abs(slots[0].y - e2.clientY);
+      for (var i = 1; i < slots.length; i++) {
+        var d = Math.abs(slots[i].y - e2.clientY);
+        if (d < bestD) { bestD = d; best = slots[i]; }
+      }
+      drag.slot = best;
+      if (best.node.nextSibling !== line) {
+        best.node.parentNode.insertBefore(line, best.node.nextSibling);
+      }
+    }
+
+    /* commit === false abandons the move (Escape, pointercancel, released off
+       the list). The teardown runs either way - leaving `drag` set would wedge
+       dragging for the rest of the session. */
+    function finish(commit) {
+      if (!drag) return;
+      try { drag.target.releasePointerCapture(drag.pointerId); } catch (e) { /* ignore */ }
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('keydown', onKey);
+      card.classList.remove('dragging');
+      clearLine();
+      var slot = drag.slot, moved = drag.moved;
+      drag = null;
+      if (commit && moved && slot) {
+        send({ type: 'element-reorder', id: id, row: slot.row, index: slot.index });
+      }
+    }
+    function onUp(e2) { if (drag && e2.pointerId === drag.pointerId) finish(true); }
+    function onCancel(e2) { if (drag && e2.pointerId === drag.pointerId) finish(false); }
+    function onKey(e2) { if (e2.key === 'Escape') { e2.preventDefault(); finish(false); } }
+
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
+    document.addEventListener('keydown', onKey);
+  }
+
   function renderElements(force) {
     var host = $('#el-list');
     if (!host || !S) return;
+    /* a rebuild mid-drag would replace the card being carried and leave the
+       drop measured against dead nodes - only refresh the live values */
+    if (drag) { elementSyncs.forEach(function (sy) { sy(); }); return; }
     var sig = elementSignature();
     if (!force && sig === lastSig) {
       elementSyncs.forEach(function (s) { s(); });
@@ -837,6 +963,7 @@
       return a - b;
     }).forEach(function (r) {
       var head = el('div', 'row-head', r === 'full' ? 'FULL HEIGHT' : ('ROW ' + (parseInt(r, 10) + 1)));
+      head.dataset.row = r;
       host.appendChild(head);
       byRow[r].sort(function (a, b) {
         return (a.place.col - b.place.col) || (a.place.order - b.place.order);
@@ -951,8 +1078,10 @@
     { id: 'type', label: 'FONTS' },
     { id: 'edges', label: 'EDGES & EFFECTS' },
     { id: 'anim', label: 'ANIMATION' },
-    { id: 'presets', label: 'PRESETS', open: true },
     { id: 'obs', label: 'OBS & INTEGRATIONS' },
+    /* last on purpose: loading a preset replaces the whole look, so it must
+       not sit where a hand reaches first */
+    { id: 'presets', label: 'PRESETS', open: true },
   ];
 
   var globalSyncs = [];
@@ -986,13 +1115,17 @@
 
   function buildSimpleUi() {
     var body = $('#sec-body-simple');
-    body.appendChild(el('div', 'hint', 'Tap a preset to load it, edit the text, then press SHOW to put it on air.'));
-    var grid = el('div', null);
-    grid.id = 'quick-grid';
-    body.appendChild(grid);
+    body.appendChild(el('div', 'hint', 'Edit the text, then press SHOW to put it on air.'));
     var texts = el('div', null);
     texts.id = 'simple-texts';
     body.appendChild(texts);
+    /* presets go under the text boxes: tapping one throws away everything in
+       the preview, so it must not be the first thing a thumb finds mid-show */
+    body.appendChild(el('div', 'quick-head', 'LOAD A PRESET'));
+    body.appendChild(el('div', 'hint', 'Replaces the whole look in the preview — nothing reaches air until SHOW.'));
+    var grid = el('div', null);
+    grid.id = 'quick-grid';
+    body.appendChild(grid);
   }
 
   function buildElementsUi() {
@@ -1345,41 +1478,31 @@
      it without polling hard. The cockpit size is re-derived here too: a scroll
      event does not fire when the position did not change, so a class set while
      scrolled down could otherwise stay stuck after the content shrank. */
-  setInterval(function () {
-    paintHits();
-    updateCockpit();
-  }, 700);
+  setInterval(paintHits, 700);
 
-  /* ---- shrink the cockpit once the operator scrolls into the controls ----
-     ...and straight away on a short dock: docked at the bottom of OBS the
-     panel is often only ~500px tall, where a full-size cockpit would take 400
-     of them and leave nothing to edit in. */
-  function updateCockpit() {
-    var compact = window.innerHeight < 620 || window.scrollY > 40;
-    document.body.classList.toggle('cockpit-compact', compact);
-
-    var ck = $('#cockpit');
-    if (!ck) return;
-    var h = Math.round(ck.getBoundingClientRect().height);
-
-    /* if the cockpit cannot fit in the dock at all, stop pinning it: better a
-       scrolling header than controls no one can reach */
-    var tooTall = h > window.innerHeight - 80;
-    document.body.classList.toggle('cockpit-static', tooTall);
-
-    /* the cockpit is out of flow, so hand its height back as padding */
-    var want = tooTall ? '' : (h + 'px');
-    if (document.body.style.paddingTop !== want) document.body.style.paddingTop = want;
+  /* ---- preview size is the operator's, and it sticks ------------------
+     The header scrolls with the page again; instead of stealing room, the
+     preview starts small and can be sized to taste. Kept in localStorage, not
+     in the look: it is a per-machine preference, not part of the graphic. */
+  var PREVIEW_MIN = 26, PREVIEW_MAX = 100, PREVIEW_DEFAULT = 58;
+  function previewWidthPct() {
+    var v = PREVIEW_DEFAULT;
+    try {
+      var saved = parseInt(localStorage.getItem('lt-preview-w'), 10);
+      if (saved >= PREVIEW_MIN && saved <= PREVIEW_MAX) v = saved;
+    } catch (e) { /* private mode */ }
+    return v;
   }
-  window.addEventListener('resize', updateCockpit);
-  /* the cockpit changes height when it compacts, when the dock is resized and
-     when the status pills wrap — keep the spacer honest */
-  if (window.ResizeObserver) {
-    var ckEl = $('#cockpit');
-    if (ckEl) new ResizeObserver(updateCockpit).observe(ckEl);
+  function applyPreviewWidth(pct, save) {
+    pct = Math.max(PREVIEW_MIN, Math.min(PREVIEW_MAX, pct));
+    document.body.style.setProperty('--preview-w', pct + '%');
+    if (save) {
+      try { localStorage.setItem('lt-preview-w', String(Math.round(pct))); } catch (e) { /* ignore */ }
+    }
+    fitPreview();
+    return pct;   /* the width actually asked for, after clamping */
   }
-  window.addEventListener('scroll', updateCockpit, { passive: true });
-  updateCockpit();
+  /* nothing to do on scroll any more — the cockpit scrolls with the page */
 
   document.querySelectorAll('.pv-bg').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -1390,6 +1513,88 @@
   });
   var defBg = document.querySelector('.pv-bg[data-bg="checker"]');
   if (defBg) defBg.classList.add('active');
+
+  /* Size the preview by dragging its right edge or bottom-right corner. The
+     picture is 16:9, so width is the only real degree of freedom — height
+     follows it. */
+  (function buildPreviewResize() {
+    var box = $('#preview-box');
+    var wrap = $('#preview-wrap');
+    if (!box || !wrap) return;
+
+    var edge = el('div');
+    edge.id = 'preview-edge';
+    edge.title = 'Drag to resize the preview';
+    var corner = el('div');
+    corner.id = 'preview-corner';
+    corner.title = 'Drag to resize the preview';
+    var sizer = $('#preview-sizer') || box;
+    sizer.appendChild(edge);
+    sizer.appendChild(corner);
+
+    function availWidth() {
+      var cs = getComputedStyle(wrap);
+      return wrap.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
+    }
+
+    var rz = null;   /* the live resize session, or null */
+
+    function startResize(ev) {
+      if (rz) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var startX = ev.clientX;
+      var startW = box.getBoundingClientRect().width;
+      var avail = availWidth();
+      if (!avail) return;
+      /* track the percentage we ASK for, never the one we can measure back:
+         min-width clamps the box, so re-measuring at the end would save a
+         size much larger than the one the operator dragged to */
+      rz = { pointerId: ev.pointerId, target: ev.target, pct: (startW / avail) * 100 };
+      document.body.classList.add('preview-resizing');
+      try { ev.target.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+
+      function move(e2) {
+        if (!rz || e2.pointerId !== rz.pointerId) return;
+        /* the release can go missing (dragged out of the dock, alt-tab, a
+           modal steals the pointer) - the next bare move ends the session
+           instead of resizing forever under a button that is no longer down */
+        if (e2.buttons === 0) { end(); return; }
+        rz.pct = applyPreviewWidth(((startW + (e2.clientX - startX)) / avail) * 100, false);
+      }
+      function end(e2) {
+        if (!rz) return;                                         /* idempotent */
+        if (e2 && e2.pointerId != null && e2.pointerId !== rz.pointerId) return;
+        try { rz.target.releasePointerCapture(rz.pointerId); } catch (e) { /* ignore */ }
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', end);
+        document.removeEventListener('pointercancel', end);
+        window.removeEventListener('blur', end);
+        document.removeEventListener('visibilitychange', end);
+        rz.target.removeEventListener('lostpointercapture', end);
+        document.body.classList.remove('preview-resizing');
+        var pct = rz.pct;
+        rz = null;
+        applyPreviewWidth(pct, true);
+      }
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', end);
+      document.addEventListener('pointercancel', end);
+      window.addEventListener('blur', end);
+      document.addEventListener('visibilitychange', end);
+      ev.target.addEventListener('lostpointercapture', end);
+    }
+
+    edge.addEventListener('pointerdown', startResize);
+    corner.addEventListener('pointerdown', startResize);
+
+    /* double-click either handle to go back to the default size */
+    function reset(ev) { ev.preventDefault(); applyPreviewWidth(PREVIEW_DEFAULT, true); }
+    edge.addEventListener('dblclick', reset);
+    corner.addEventListener('dblclick', reset);
+
+    applyPreviewWidth(previewWidthPct(), false);
+  })();
 
   /* ----------------------------------------------------------- wiring */
 

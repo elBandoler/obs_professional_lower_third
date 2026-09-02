@@ -277,18 +277,23 @@ json LtState::normalizeElement(const json &in)
    sequential - mirrors normalizePlacement() in server.js */
 void LtState::normalizePlacement(json &els)
 {
+	/* read as double: element-reorder deliberately parks a dropped element
+	   on a fractional col (n +/- 0.5, or a midpoint) so it sorts between its
+	   new neighbours, and this pass is what turns that into a real column.
+	   Truncating to int here would collapse it onto a neighbour and give the
+	   plugin a different layout from server.js for the very same drag. */
 	const char *keys[2] = { "row", "col" };
 	for (int ki = 0; ki < 2; ki++) {
 		const char *key = keys[ki];
-		std::vector<int> used;
+		std::vector<double> used;
 		for (auto &e : els) {
-			int v = e["place"][key].get<int>();
+			double v = e["place"][key].get<double>();
 			if (std::find(used.begin(), used.end(), v) == used.end())
 				used.push_back(v);
 		}
 		std::sort(used.begin(), used.end());
 		for (auto &e : els) {
-			int v = e["place"][key].get<int>();
+			double v = e["place"][key].get<double>();
 			int idx = (int)(std::find(used.begin(), used.end(), v) - used.begin());
 			e["place"][key] = idx;
 		}
@@ -302,7 +307,7 @@ void LtState::normalizePlacement(json &els)
 	}
 	for (auto &kv : cells) {
 		std::vector<size_t> &idxs = kv.second;
-		std::sort(idxs.begin(), idxs.end(), [&els](size_t a, size_t b) {
+		std::stable_sort(idxs.begin(), idxs.end(), [&els](size_t a, size_t b) {
 			return els[a]["place"]["order"].get<double>() < els[b]["place"]["order"].get<double>();
 		});
 		for (size_t n = 0; n < idxs.size(); n++)
@@ -1238,6 +1243,89 @@ void LtState::handleClientMessage(const json &msg)
 				}
 				json *me3 = findElement(movedId);
 				if (me3) (*me3)["place"]["col"] = 0;
+			}
+			normalizePlacement(st["pending"]["elements"]);
+			pushPendingLocked();
+		}
+	} else if (t == "element-reorder") {
+		/* mirror of the JS handler: reuse the row's slots when reordering
+		   inside it, slide between neighbours when moving between rows */
+		json *e = findElement(msg.value("id", ""));
+		if (e) {
+			/* row "full" is the FULL HEIGHT group: dropping there makes
+			   the element span every row, dropping anywhere else takes it
+			   back out */
+			bool toFull = msg.contains("row") && msg["row"].is_string() &&
+			              msg["row"].get<std::string>() == "full";
+			int targetRow = clampInt(numOr(msg, "row", 0), 0, 19);
+			int index = (int)numOr(msg, "index", 0);
+			if (index < 0) index = 0;
+			std::string movedId = (*e).value("id", "");
+			/* a spanning element belongs to no row, so a drop onto the row it
+			   nominally sits on is a move IN, not a reorder within it */
+			bool sameRow = !(*e)["place"].value("spanAll", false) &&
+			               (*e)["place"]["row"].get<int>() == targetRow;
+
+			auto rowMembers = [&](bool includeMoved) {
+				std::vector<json *> v;
+				for (auto &o : st["pending"]["elements"]) {
+					if (o["place"].value("spanAll", false))
+						continue;
+					if (o["place"]["row"].get<int>() != targetRow)
+						continue;
+					if (!includeMoved && o.value("id", "") == movedId)
+						continue;
+					v.push_back(&o);
+				}
+				std::sort(v.begin(), v.end(), [](json *a, json *b) {
+					double ac = (*a)["place"]["col"].get<double>();
+					double bc = (*b)["place"]["col"].get<double>();
+					if (ac != bc) return ac < bc;
+					return (*a)["place"]["order"].get<double>() < (*b)["place"]["order"].get<double>();
+				});
+				return v;
+			};
+
+			if (toFull) {
+				(*e)["place"]["spanAll"] = true;
+			} else if (sameRow) {
+				std::vector<json *> all = rowMembers(true);
+				std::vector<std::pair<double, double>> slots;
+				for (auto *p : all)
+					slots.push_back({ (*p)["place"]["col"].get<double>(),
+					                  (*p)["place"]["order"].get<double>() });
+				std::vector<json *> list = rowMembers(false);
+				size_t at = (size_t)index;
+				if (at > list.size()) at = list.size();
+				list.insert(list.begin() + at, e);
+				for (size_t i = 0; i < list.size() && i < slots.size(); i++) {
+					(*list[i])["place"]["col"] = slots[i].first;
+					(*list[i])["place"]["order"] = slots[i].second;
+				}
+			} else {
+				std::vector<json *> others = rowMembers(false);
+				(*e)["place"]["spanAll"] = false;
+				(*e)["place"]["row"] = targetRow;
+				json *before = (index > 0 && (size_t)(index - 1) < others.size()) ? others[index - 1] : nullptr;
+				json *after = ((size_t)index < others.size()) ? others[index] : nullptr;
+				if (!before && !after) {
+					(*e)["place"]["col"] = 0.0;
+					(*e)["place"]["order"] = 0.0;
+				} else if (!before) {
+					(*e)["place"]["col"] = (*after)["place"]["col"].get<double>() - 0.5;
+					(*e)["place"]["order"] = 0.0;
+				} else if (!after) {
+					(*e)["place"]["col"] = (*before)["place"]["col"].get<double>() + 0.5;
+					(*e)["place"]["order"] = 0.0;
+				} else if ((*before)["place"]["col"].get<double>() == (*after)["place"]["col"].get<double>()) {
+					(*e)["place"]["col"] = (*before)["place"]["col"].get<double>();
+					(*e)["place"]["order"] = ((*before)["place"]["order"].get<double>() +
+					                          (*after)["place"]["order"].get<double>()) / 2.0;
+				} else {
+					(*e)["place"]["col"] = ((*before)["place"]["col"].get<double>() +
+					                        (*after)["place"]["col"].get<double>()) / 2.0;
+					(*e)["place"]["order"] = 0.0;
+				}
 			}
 			normalizePlacement(st["pending"]["elements"]);
 			pushPendingLocked();

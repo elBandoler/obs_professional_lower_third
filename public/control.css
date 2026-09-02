@@ -54,50 +54,12 @@ input[type="color"] {
 
 /* ------------------------------------------------------------ cockpit */
 
-/* The preview and the on-air buttons never leave the screen. Editing an
-   element used to scroll both away, so you could not see what you were
-   changing nor reach the button that puts it on air. */
-/* Fixed, not sticky. position:sticky depends on the engine picking the right
-   scrolling ancestor, and the browser embedded in OBS does not always agree
-   with a normal browser about which that is — the header jumped and overlapped
-   the controls. Fixed needs no such agreement; the space it occupies is given
-   back as padding-top on the body, kept in sync from JS. */
-#cockpit {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 30;
-  background: var(--bg);
-  box-shadow: 0 10px 16px -12px #000;
-}
-/* on a dock too short to hold the cockpit at all, let it scroll normally so
-   nothing becomes unreachable */
-body.cockpit-static #cockpit {
-  position: static;
-  box-shadow: none;
-}
-body.cockpit-static { padding-top: 0 !important; }
-#cockpit-main { padding-bottom: 2px; }
-
-/* once you scroll down to the controls the preview steps aside for the
-   buttons, so the whole cockpit costs about a third of what it did */
-body.cockpit-compact #cockpit-main {
-  display: grid;
-  grid-template-columns: 152px 1fr;
-  gap: 8px;
-  align-items: center;
-  padding: 0 10px 4px 10px;
-}
-body.cockpit-compact #preview-wrap { padding: 0; }
-body.cockpit-compact #preview-tools { display: none; }
-body.cockpit-compact #actions { padding: 0; gap: 6px; }
-body.cockpit-compact #actions button { font-size: 12px; padding: 9px 4px; }
-body.cockpit-compact #actions-sub { padding: 4px 0 0 0; }
-body.cockpit-compact #topbar { padding-bottom: 4px; }
-@media (max-width: 340px) {
-  body.cockpit-compact #cockpit-main { grid-template-columns: 1fr; }
-}
+/* The cockpit is an ordinary part of the page again — it scrolls away with
+   everything else, as it did before. Pinning it needed position:fixed or
+   sticky, and both fought the browser embedded in OBS. The preview is small
+   by default and the operator sizes it, which is a better answer to "I want
+   to see it while I work" than taking the space away from them. */
+#cockpit { background: var(--bg); }
 
 /* a red rail down the edge of the whole dock whenever something is on air */
 body.onair::before {
@@ -160,9 +122,28 @@ body.mode-simple #mode-toggle { color: var(--amber); border-color: #6a5426; }
 .pill.err { color: #ee7a76; border-color: #6a2e2c; }
 .pill.onair { color: #fff; background: var(--red); border-color: var(--red); }
 
+/* the SIMPLE view's preset heading, separating them from the text boxes */
+.quick-head {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+}
+
 /* ------------------------------------------------------------ preview */
 
-#preview-wrap { padding: 0 10px; }
+#preview-wrap { padding: 0 20px 0 10px; }
+/* the sizer owns the width so the handles can live just outside the picture */
+#preview-sizer {
+  position: relative;
+  /* --preview-w is a percentage of the dock width, set by dragging the edge
+     and remembered per machine; the preview starts small on purpose */
+  width: var(--preview-w, 58%);
+  min-width: 120px;
+}
 #preview-box {
   position: relative;
   width: 100%;
@@ -213,7 +194,39 @@ body.dirty #preview-tag { color: var(--amber); border-color: rgba(224, 166, 60, 
   align-items: center;
   gap: 4px;
   padding: 6px 0 2px 0;
+  flex-wrap: wrap;
 }
+/* grab the right edge or the bottom-right corner of the preview to size it */
+#preview-edge {
+  position: absolute;
+  top: 0; bottom: 0; right: -12px;
+  width: 12px;
+  cursor: ew-resize;
+  z-index: 6;
+  touch-action: none;
+}
+#preview-edge:hover, body.preview-resizing #preview-edge {
+  background: linear-gradient(to right, transparent, rgba(74, 125, 224, 0.55));
+}
+#preview-corner {
+  position: absolute;
+  right: -12px; bottom: 0;
+  width: 12px; height: 22px;
+  cursor: nwse-resize;
+  z-index: 7;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 54%, var(--dim) 54%, var(--dim) 64%, transparent 64%),
+    linear-gradient(135deg, transparent 74%, var(--dim) 74%, var(--dim) 84%, transparent 84%);
+}
+#preview-corner:hover, body.preview-resizing #preview-corner {
+  background:
+    linear-gradient(135deg, transparent 54%, var(--blue) 54%, var(--blue) 64%, transparent 64%),
+    linear-gradient(135deg, transparent 74%, var(--blue) 74%, var(--blue) 84%, transparent 84%);
+}
+/* while dragging, nothing else should take the pointer or select text */
+body.preview-resizing { user-select: none; }
+body.preview-resizing #preview-hit { pointer-events: none; }
 .pv-label { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
 .pv-bg { padding: 2px 7px; font-size: 12px; }
 .pv-bg.active { border-color: var(--blue); color: var(--blue); }
@@ -424,6 +437,37 @@ details.el-card {
   overflow: hidden;
 }
 details.el-card[open] { border-color: #454852; }
+.el-grip {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+  color: #5d616b;
+  cursor: grab;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+  touch-action: none;
+}
+.el-grip:hover { color: var(--text); }
+.el-card.dragging {
+  opacity: 0.55;
+  border-color: var(--blue);
+}
+/* carried off the list: releasing here abandons the move (so does Escape) */
+.el-card.drag-void {
+  opacity: 0.3;
+  border-color: var(--dim);
+  border-style: dashed;
+}
+/* where the card will land */
+.drop-line {
+  height: 0;
+  border-top: 2px solid var(--blue);
+  margin: -1px 0;
+  border-radius: 2px;
+}
+.row-head.drop-target { color: var(--blue); }
+
 .el-head {
   list-style: none;
   cursor: pointer;
@@ -587,7 +631,10 @@ body.mode-simple #sec-layout,
 body.mode-simple #sec-type,
 body.mode-simple #sec-edges,
 body.mode-simple #sec-anim,
-body.mode-simple #sec-obs { display: none; }
+body.mode-simple #sec-obs,
+/* the operator view already has the quick-launch grid; the full preset
+   editor (overwrite / delete) has no business in front of a live operator */
+body.mode-simple #sec-presets { display: none; }
 body.mode-simple #sec-simple > summary { display: none; }
 body:not(.mode-simple) #simple-texts { display: none; }
 

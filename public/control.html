@@ -8,9 +8,11 @@
 </head>
 <body>
 
-<!-- Everything you need to run the show stays pinned to the top: the preview
-     is the only preview that exists (OBS cannot show a pending version), so it
-     must never scroll out of reach of the buttons that put it on air. -->
+<!-- The cockpit groups the preview with the buttons that put it on air. It
+     scrolls with the rest of the page: pinning it needed position:fixed or
+     sticky, and both misbehaved in the browser OBS embeds. The preview is
+     small by default and the operator drags its edge to size it, which keeps
+     the buttons reachable without taking the space away from them. -->
 <div id="cockpit">
 
   <div id="offline-banner">Server connection lost — reconnecting…</div>
@@ -27,10 +29,14 @@
 
   <div id="cockpit-main">
     <section id="preview-wrap">
+      <!-- #preview-sizer carries the width; the resize handles hang in the
+           gutter beside it so they never cover the picture's click targets -->
+      <div id="preview-sizer">
       <div id="preview-box">
         <iframe id="preview-frame" src="/overlay?role=preview&label=off&bg=checker" scrolling="no"></iframe>
         <div id="preview-hit"></div>
         <div id="preview-tag">PREVIEW</div>
+      </div>
       </div>
       <div id="preview-tools">
         <span class="pv-label">BG</span>

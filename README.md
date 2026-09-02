@@ -1,8 +1,8 @@
 # OBS Lower Thirds
 
-Broadcast-style animated lower thirds for OBS Studio, with a real **preview → take** workflow:
-you edit in a preview, nothing touches the program feed, and the change goes live — animated —
-when you press **TAKE** or OBS's own **Transition** button.
+Broadcast-style animated lower thirds for OBS Studio, with a real **preview → air** workflow:
+you edit in the dock's preview, nothing touches the program feed, and the change goes live —
+animated — when you press **SHOW** or OBS's own **Transition** button.
 
 - **Fully dynamic layout** — add, remove, duplicate and move as many text and image elements
   as you like. Two-line news straps, headline-only, badges/tags, a logo on either side or
@@ -52,7 +52,7 @@ You'll see the URLs it serves:
 |---|---|---|
 | Control panel | `http://127.0.0.1:3620/control` | OBS custom browser dock |
 | Program overlay | `http://127.0.0.1:3620/overlay` | Browser source in your scenes |
-| Preview mirror | `http://127.0.0.1:3620/overlay?role=preview` | Optional preview source/projector |
+| Preview mirror | `http://127.0.0.1:3620/overlay?role=preview` | Open in a **normal browser window** only — never as an OBS source |
 
 ## 2. Set up OBS
 
@@ -71,7 +71,7 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
 1. *View → Docks → Custom Browser Docks…*
 2. Name: `Lower Thirds`, URL: `http://127.0.0.1:3620/control` → Apply.
 
-*Let OBS's Transition button do the TAKE:*
+*Let OBS's Transition button commit pending changes:*
 1. In OBS: *Tools → WebSocket Server Settings* → **Enable WebSocket server**, copy the password
    (OBS 28+ has this built in).
 2. In the dock: *OBS & INTEGRATIONS* → enter the password → enable **Connect to OBS**.
@@ -82,12 +82,15 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
 
 - Everything you type or restyle goes to the **pending** state. **The dock's preview pane is
   the preview** — it shows the change immediately, and the program overlay does not move.
-- **TAKE** (dock button, or OBS **Transition**, or `/api/take`) commits pending → program:
+- **SHOW** commits pending → program and animates the lower third in. It is the only way on
+  air from the dock:
   - text lines swap with an animation, colors/sizes/positions morph smoothly,
   - structural changes (an element added/removed/moved) do a quick out-and-in,
-  - with **animations off** (checkbox next to TAKE, or Animation section): the change applies
+  - with **animations off** (checkbox next to SHOW, or Animation section): the change applies
     **instantly**, no motion.
-- **SHOW** commits pending and animates the lower third in; **HIDE** animates it out.
+- **HIDE** animates it out.
+- OBS's **Transition** button (and `/api/take`) commits pending → program as well, so a change
+  you have staged goes live with your next transition.
 - **discard changes** reverts pending back to what's on air.
 
 **OBS's own Preview cannot show the pending version.** A source renders once and the same
@@ -95,8 +98,8 @@ pixels are painted into both Preview and Program — OBS has no concept of a sou
 only in the Preview view. So there is no way to see "what is about to go on air" inside OBS's
 Preview pane, for this or any other source.
 
-That is why **the preview lives in the dock**, right above the SHOW / TAKE / HIDE buttons. It
-is a real render of the pending look and it can never reach air.
+That is why **the preview lives in the dock**, right above the SHOW / HIDE buttons. It is a
+real render of the pending look and it can never reach air.
 
 If you want it bigger, open `http://127.0.0.1:3620/overlay?role=preview` **in an ordinary
 browser window** — on a second monitor, for example. A browser window is outside OBS, so it
@@ -107,12 +110,18 @@ program, and that source always shows your unfinished edits — it is a trap, no
 
 ## 4. Options overview
 
+The **preview** at the top is the only preview there is, so it is yours to size: drag its
+right edge or the bottom-right corner to make it as big or small as you want (double-click a
+handle to reset). The size is remembered per machine.
+
 The dock has two views, toggled with the **SIMPLE / ADVANCED** button in its header
 (remembered per machine):
 
-- **Simple** — operator mode: quick-launch buttons for every saved preset (tap → loads into
-  the preview), one text box per text element with its saved-text chips underneath, and the
-  SHOW / TAKE / HIDE controls. Nothing else to touch mid-show.
+- **Simple** — operator mode: the SHOW / HIDE controls, one text box per text element with
+  its saved-text chips underneath, and — **at the bottom, out of the way** — quick-launch
+  buttons for every saved preset (tap → loads into the preview). Loading a preset replaces
+  the whole look, so it sits below the text boxes where a hand won't find it by accident;
+  the preset editor (overwrite / delete) is hidden entirely in this view.
 - **Advanced** — the full editor below.
 
 Advanced sections:
@@ -121,8 +130,13 @@ Advanced sections:
   move. Each is either **text** or an **image**, and each has its own colours, gradient,
   background picture, type, padding, edges and accent strip.
   - **＋ text / ＋ image** adds one; **⧉ copy** duplicates; **✕ remove** deletes.
-  - **▲ ▼** move an element between rows, **◀ ▶** between columns, **own row** gives it a
-    row to itself. Elements sharing a cell sit side by side on one line.
+  - **Drag the ⠿ grip** on a card to reorder elements — within a row, into another row, or
+    onto the **FULL HEIGHT** heading to make an element span every row (drag it back into a
+    row to undo). Reordering inside a row swaps the elements' column slots, so the other rows
+    keep their alignment. A blue line shows where the card will land; drag it off the list or
+    press **Escape** to abandon the move. The **▲ ▼ ◀ ▶** buttons do the same thing one step
+    at a time, and **own row** gives an element a row to itself. Elements sharing a cell sit
+    side by side on one line.
   - **Stretch to fill** makes an element take the remaining width of its row.
   - **Pin to edge** pushes an element to the far left or far right of its row. Two elements
     sharing a row can then sit at opposite ends — one hard against the left edge, the other
@@ -133,7 +147,7 @@ Advanced sections:
     (a badge stays exactly above a logo).
 - **Text presets (per element)** — under every text element, **＋ save text** stores its
   current wording. Tap a saved chip to load it back. Loading only fills the **preview** —
-  nothing reaches air until you press SHOW or TAKE.
+  nothing reaches air until you press SHOW.
 - **Layout & position** — direction (auto/RTL/LTR), default text align, full width or
   anchored (left/center/right) with max width, side/bottom margins, gap between blocks.
 - **Colours (per element)** — background + opacity + text colour, **multi-stop gradients**
@@ -153,8 +167,10 @@ Advanced sections:
   Any element can override the global edge style with its own.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
-- **Presets** — save/load/overwrite/delete complete looks (all elements + style +
-  animation). Loading a preset only changes the *preview*; TAKE or SHOW puts it on air.
+- **Presets** (the last section, deliberately — loading one throws away everything in the
+  preview) — five built in, including **Headline + subtitle** (a big headline with a smaller
+  line under it) — plus save/load/overwrite/delete of your own complete looks (all elements +
+  style + animation). Loading a preset only changes the *preview*; SHOW puts it on air.
   Presets are what the SIMPLE view's quick-launch buttons run.
 
 Hebrew/Arabic content is auto-detected (or force RTL) and the whole layout mirrors properly.

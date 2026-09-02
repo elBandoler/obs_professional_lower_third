@@ -779,6 +779,59 @@ function handleMessage(client, msg) {
       pushPending();
     }
   }
+  else if (t === 'element-reorder') {
+    /* drop an element at a position in a row (drag and drop in the dock).
+       Within the same row the row's existing column slots are reused, so
+       reordering never disturbs how other rows line up; moving between rows
+       slides in between neighbours and lets normalizePlacement renumber. */
+    const el = state.pending.elements.find((e) => e.id === msg.id);
+    if (el) {
+      /* row 'full' is the FULL HEIGHT group: dropping there makes the element
+         span every row, and dropping anywhere else takes it back out again */
+      const toFull = msg.row === 'full';
+      const targetRow = Math.max(0, Math.min(19, parseInt(msg.row, 10) || 0));
+      const index = Math.max(0, parseInt(msg.index, 10) || 0);
+      const byPos = (a, b) => (a.place.col - b.place.col) || (a.place.order - b.place.order);
+      /* a spanning element belongs to no row, so a drop into the row it
+         nominally sits on is still a move IN, not a reorder within it */
+      const sameRow = !el.place.spanAll && el.place.row === targetRow;
+
+      const others = state.pending.elements
+        .filter((e) => e !== el && !e.place.spanAll && e.place.row === targetRow)
+        .sort(byPos);
+
+      if (toFull) {
+        el.place.spanAll = true;
+      } else if (sameRow) {
+        const slots = state.pending.elements
+          .filter((e) => !e.place.spanAll && e.place.row === targetRow)
+          .sort(byPos)
+          .map((e) => ({ col: e.place.col, order: e.place.order }));
+        const list = others.slice();
+        list.splice(Math.min(index, list.length), 0, el);
+        list.forEach((e, i) => {
+          if (slots[i]) { e.place.col = slots[i].col; e.place.order = slots[i].order; }
+        });
+      } else {
+        el.place.spanAll = false;
+        el.place.row = targetRow;
+        const before = others[index - 1];
+        const after = others[index];
+        if (!before && !after) { el.place.col = 0; el.place.order = 0; }
+        else if (!before) { el.place.col = after.place.col - 0.5; el.place.order = 0; }
+        else if (!after) { el.place.col = before.place.col + 0.5; el.place.order = 0; }
+        else if (before.place.col === after.place.col) {
+          el.place.col = before.place.col;
+          el.place.order = (before.place.order + after.place.order) / 2;
+        } else {
+          el.place.col = (before.place.col + after.place.col) / 2;
+          el.place.order = 0;
+        }
+      }
+      normalizePlacement(state.pending.elements);
+      pushPending();
+    }
+  }
   else if (t === 'element-newrow') {
     /* pull one element out into a brand new row below its current one */
     const el = state.pending.elements.find((e) => e.id === msg.id);
