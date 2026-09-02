@@ -243,16 +243,61 @@ body.bg-green { background: #00b140; }
 /* ------------------------------------------------------ in/out anims */
 
 #stage.anim-in .anim-el {
-  animation-duration: var(--in-ms, 700ms);
+  animation-duration: var(--el-in-ms, var(--in-ms, 700ms));
   animation-timing-function: var(--ease);
   animation-fill-mode: both;
-  animation-delay: calc(var(--i, 0) * var(--stagger, 90ms));
+  animation-delay: calc(var(--i, 0) * var(--stagger, 90ms) + var(--el-delay, 0ms));
 }
 #stage.anim-out .anim-el {
   animation-duration: var(--out-ms, 500ms);
   animation-timing-function: var(--ease);
   animation-fill-mode: both;
   animation-delay: calc((var(--n, 4) - 1 - var(--i, 0)) * var(--stagger, 90ms));
+}
+
+/* Reactions: an element moving because another element's logo changed. These
+   run on their own, outside the in/out sequence, so they set every animation
+   property rather than inheriting the .anim-el block. */
+.box.react-flick,
+.box.react-replay,
+.box.react-pulse {
+  animation-duration: var(--react-ms, 400ms);
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+  animation-delay: 0s;
+}
+.box.react-flick  { animation-name: kf-react-flick; }
+.box.react-replay { animation-name: kf-react-replay; }
+.box.react-pulse  { animation-name: kf-react-pulse; }
+#stage[data-dir="rtl"] .box.react-flick  { animation-name: kf-react-flick-rtl; }
+#stage[data-dir="rtl"] .box.react-replay { animation-name: kf-react-replay-rtl; }
+
+/* flick: out one side, back in from the other — it reads as the element
+   sweeping the change through rather than merely twitching */
+@keyframes kf-react-flick {
+  0%   { transform: translateX(0); opacity: 1; }
+  40%  { transform: translateX(34px); opacity: 0; }
+  60%  { transform: translateX(-34px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes kf-react-flick-rtl {
+  0%   { transform: translateX(0); opacity: 1; }
+  40%  { transform: translateX(-34px); opacity: 0; }
+  60%  { transform: translateX(34px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes kf-react-replay {
+  from { transform: translateX(-80px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes kf-react-replay-rtl {
+  from { transform: translateX(80px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes kf-react-pulse {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.16); }
+  100% { transform: scale(1); }
 }
 
 /* slide-up */
@@ -290,6 +335,30 @@ body.bg-green { background: #00b140; }
 #stage[data-out="pop"].anim-out .anim-el { animation-name: kf-pop-out; }
 @keyframes kf-pop-in  { from { transform: scale(0.84) translateY(26px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
 @keyframes kf-pop-out { from { transform: scale(1) translateY(0); opacity: 1; } to { transform: scale(0.84) translateY(26px); opacity: 0; } }
+
+/* One element can opt out of the look's entrance and use its own.
+
+   These sit AFTER the stage rules on purpose. The extra .box beats the plain
+   '#stage[data-in=X].anim-in .anim-el' rules on specificity, but it only TIES
+   with the direction-qualified '#stage[data-dir=rtl][data-in=X]...' ones — and
+   a tie is broken by source order. Placed earlier, they lost that tie and a
+   per-element entrance was silently ignored in RTL whenever the look was set
+   to slide-side or wipe. Do not move this block back above them. */
+#stage.anim-in .box.anim-el[data-in="slide-up"]  { animation-name: kf-slideup-in; }
+#stage.anim-in .box.anim-el[data-in="fade"]      { animation-name: kf-fade-in; }
+#stage.anim-in .box.anim-el[data-in="pop"]       { animation-name: kf-pop-in; }
+#stage.anim-in .box.anim-el[data-in="slide-side"] { animation-name: kf-slideside-in; }
+#stage.anim-in .box.anim-el[data-in="wipe"]       { animation-name: kf-wipe-in; }
+#stage[data-dir="rtl"].anim-in .box.anim-el[data-in="slide-side"] { animation-name: kf-slideside-in-rtl; }
+#stage[data-dir="rtl"].anim-in .box.anim-el[data-in="wipe"]       { animation-name: kf-wipe-in-rtl; }
+/* the exit mirrors whatever entrance the element chose */
+#stage.anim-out .box.anim-el[data-in="slide-up"]  { animation-name: kf-slideup-out; }
+#stage.anim-out .box.anim-el[data-in="fade"]      { animation-name: kf-fade-out; }
+#stage.anim-out .box.anim-el[data-in="pop"]       { animation-name: kf-pop-out; }
+#stage.anim-out .box.anim-el[data-in="slide-side"] { animation-name: kf-slideside-out; }
+#stage.anim-out .box.anim-el[data-in="wipe"]       { animation-name: kf-wipe-out; }
+#stage[data-dir="rtl"].anim-out .box.anim-el[data-in="slide-side"] { animation-name: kf-slideside-out-rtl; }
+#stage[data-dir="rtl"].anim-out .box.anim-el[data-in="wipe"]       { animation-name: kf-wipe-out-rtl; }
 
 /* note: wipe animates clip-path, which overrides a chamfer clip while the
    element is animating; the chamfer is restored when the animation ends */

@@ -111,6 +111,7 @@ function minimalDefaults() {
         kind: 'text', name: 'Text', enabled: true,
         place: { row: 0, order: 0, stretch: false, rowSpan: 1 },
         text: 'New text', snippets: [], style: clone(elStyle),
+        anim: { inStyle: 'inherit', inMs: 0, delayMs: 0, reactTo: '', reactStyle: 'flick', reactMs: 400, cover: true },
       },
       image: {
         kind: 'image', name: 'Image', enabled: true,
@@ -118,6 +119,7 @@ function minimalDefaults() {
         image: { url: '', fit: 'contain', scale: 1, sources: [],
           rotate: { mode: 'off', everyMs: 8000, showMs: 6000, anim: 'fade', animMs: 450 } },
         style: deepMerge(clone(elStyle), { padX: 12, padY: 12, minWidth: 160, align: 'center' }),
+        anim: { inStyle: 'inherit', inMs: 0, delayMs: 0, reactTo: '', reactStyle: 'flick', reactMs: 400, cover: true },
       },
     },
     styleDefaults: styleDefaults,
@@ -211,6 +213,31 @@ function normalizeElement(el) {
     pin: (p.pin === 'left' || p.pin === 'right') ? p.pin : 'auto',
   };
   if (out.place.spanAll) { out.place.row = 0; out.place.rowSpan = 1; }
+
+  /* Per-element motion. `inStyle: 'inherit'` and `inMs: 0` mean "use the
+     look's animation settings" — the common case, and what every element
+     built before this existed gets on load.
+     reactTo names ANOTHER element whose logo rotation this element reacts to,
+     so a divider, chevron or rule can carry the swap instead of the logo
+     changing on its own. Mirror of the block in lt-state.cpp. */
+  const a = (out.anim && typeof out.anim === 'object') ? out.anim : {};
+  const IN_STYLES = ['inherit', 'slide-up', 'slide-side', 'wipe', 'fade', 'pop'];
+  const REACTS = ['flick', 'replay', 'pulse', 'none'];
+  const anum = (v, dflt) => (typeof v === 'number' && isFinite(v) ? Math.trunc(v) : dflt);
+  out.anim = {
+    inStyle: IN_STYLES.indexOf(a.inStyle) >= 0 ? a.inStyle : 'inherit',
+    inMs: Math.max(0, Math.min(5000, anum(a.inMs, 0))),
+    delayMs: Math.max(0, Math.min(5000, anum(a.delayMs, 0))),
+    /* validated, not truncated: slicing to 64 meant code units here and bytes
+       in the C++ mirror, which could disagree and even cut a character in half.
+       Nothing but a real element id is any use anyway. */
+    reactTo: (typeof a.reactTo === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(a.reactTo)) ? a.reactTo : '',
+    reactStyle: REACTS.indexOf(a.reactStyle) >= 0 ? a.reactStyle : 'flick',
+    reactMs: Math.max(0, Math.min(4000, anum(a.reactMs, 400))),
+    cover: a.cover !== false,
+  };
+  /* an element cannot react to its own logo changing */
+  if (out.anim.reactTo === out.id) out.anim.reactTo = '';
 
   if (kind === 'text') {
     out.text = typeof out.text === 'string' ? out.text : '';
@@ -764,6 +791,11 @@ function handleMessage(client, msg) {
   }
   else if (t === 'element-remove') {
     state.pending.elements = state.pending.elements.filter((e) => e.id !== msg.id);
+    /* nothing may be left reacting to an element that no longer exists — the
+       dock would show a blank picker with the reaction controls still on */
+    state.pending.elements.forEach((e) => {
+      if (e.anim && e.anim.reactTo === msg.id) e.anim.reactTo = '';
+    });
     if (!state.pending.elements.length) {
       state.pending.elements = [normalizeElement(deepMerge(defaultElement('text'), { id: newId('el'), name: 'Headline' }))];
     }

@@ -760,7 +760,7 @@
     var tabBar = el('div', 'el-tabs');
     body.appendChild(tabBar);
     var panes = {};
-    var TABS = [['content', 'TEXT'], ['place', 'PLACE'], ['style', 'COLOUR'], ['type', 'TYPE'], ['box', 'BOX']];
+    var TABS = [['content', 'TEXT'], ['place', 'PLACE'], ['style', 'COLOUR'], ['type', 'TYPE'], ['box', 'BOX'], ['motion', 'MOTION']];
     TABS.forEach(function (t) {
       var b = el('button', 'el-tab', t[1]);
       b.dataset.tab = t[0];
@@ -786,6 +786,7 @@
       var r = makeRow(spec);
       panes[pane].appendChild(r.row);
       syncs.push(r.sync);
+      return r;
     }
     function addNode(n) { panes[pane].appendChild(n); }
 
@@ -956,6 +957,66 @@
       add({ type: 'toggle', label: 'Never wrap',
         get: function () { return dig(findEl(id) || {}, 'style.nowrap'); }, set: function (v) { sendEl(id, 'style.nowrap', v); } });
     }
+
+    pane = 'motion';
+    add({ type: 'select', label: 'Entrance',
+      options: [{ v: 'inherit', l: 'Same as the look' }, { v: 'slide-up', l: 'Slide up' },
+                { v: 'slide-side', l: 'Slide from the side' }, { v: 'wipe', l: 'Wipe' },
+                { v: 'fade', l: 'Fade' }, { v: 'pop', l: 'Pop' }],
+      title: 'Give this one element its own way in. "Slide from the side" enters from the right on an RTL layout and from the left on LTR. The exit mirrors it.',
+      get: function () { return dig(findEl(id) || {}, 'anim.inStyle'); },
+      set: function (v) { sendEl(id, 'anim.inStyle', v); } });
+    add({ type: 'slider', label: 'Entrance time', min: 0, max: 3000, step: 50, unit: 'ms',
+      title: '0 = use the look\u2019s in-duration',
+      get: function () { return dig(findEl(id) || {}, 'anim.inMs'); },
+      set: function (v) { sendEl(id, 'anim.inMs', v); } });
+    add({ type: 'slider', label: 'Extra delay', min: 0, max: 3000, step: 50, unit: 'ms',
+      title: 'Held back this much on top of the stagger \u2014 use it to land this element after the ones around it',
+      get: function () { return dig(findEl(id) || {}, 'anim.delayMs'); },
+      set: function (v) { sendEl(id, 'anim.delayMs', v); } });
+
+    add({ type: 'subhead', label: 'REACT TO A LOGO CHANGE' });
+    var logoOpts = [{ v: '', l: 'Nothing \u2014 stay still' }];
+    var logoIds = [];
+    elements().forEach(function (o) {
+      if (o.id === id || o.kind !== 'image') return;
+      logoOpts.push({ v: o.id, l: o.name || 'Image' });
+      logoIds.push(o.id);
+    });
+    var reactRow = add({ type: 'select', label: 'When this changes',
+      options: logoOpts,
+      title: 'Pick a logo. Every time it rotates to another picture, this element moves \u2014 so a chevron, rule or divider carries the change instead of the logo swapping on its own.',
+      get: function () { return dig(findEl(id) || {}, 'anim.reactTo'); },
+      /* no scheduleRebuild: the three reaction rows below are revealed and
+         hidden by their showIf on the pending echo, exactly as the rotation
+         rows are — rebuilding here only tore the card down under the operator */
+      set: function (v) { sendEl(id, 'anim.reactTo', v); } });
+    /* element names are deliberately left out of elementSignature, so a rename
+       never rebuilds this card \u2014 refresh the picker's labels in place instead */
+    syncs.push(function () {
+      /* this row's own select — panes.motion has several, and the first one
+         is Entrance, whose labels are none of our business */
+      var sel = reactRow.row.querySelector('select');
+      if (!sel) return;
+      logoIds.forEach(function (oid, k) {
+        var o = findEl(oid);
+        var opt = sel.options[k + 1];
+        if (o && opt) opt.textContent = o.name || 'Image';
+      });
+    });
+    var reacts = function () { return !!dig(findEl(id) || {}, 'anim.reactTo'); };
+    add({ type: 'select', label: 'This element', showIf: reacts,
+      options: [{ v: 'flick', l: 'Flicks through' }, { v: 'replay', l: 'Enters again' },
+                { v: 'pulse', l: 'Pulses' }, { v: 'none', l: 'Does nothing' }],
+      get: function () { return dig(findEl(id) || {}, 'anim.reactStyle'); },
+      set: function (v) { sendEl(id, 'anim.reactStyle', v); } });
+    add({ type: 'slider', label: 'Reaction time', min: 0, max: 2000, step: 50, unit: 'ms', showIf: reacts,
+      get: function () { return dig(findEl(id) || {}, 'anim.reactMs'); },
+      set: function (v) { sendEl(id, 'anim.reactMs', v); } });
+    add({ type: 'toggle', label: 'Cover the swap', showIf: reacts,
+      title: 'Hold the logo change until this element is halfway through its move, so the picture changes under cover instead of beside it',
+      get: function () { return dig(findEl(id) || {}, 'anim.cover'); },
+      set: function (v) { sendEl(id, 'anim.cover', v); } });
 
     pane = 'box';
     add({ type: 'slider', label: 'Pad horizontal', min: 0, max: 90, step: 1, unit: 'px',

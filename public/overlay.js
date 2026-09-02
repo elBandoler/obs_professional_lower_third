@@ -28,6 +28,7 @@
   var grid = null;      // the .lt-grid node
   var nodes = {};       // element id -> { cell, box, line, txt, img, rotTimer }
   var maxStagger = 0;   // highest --i in the current layout
+  var maxElIn = 0;      // longest per-element entrance (delay + duration)
   var outInFlight = false;
   var deferredLook = null;
 
@@ -379,12 +380,22 @@
   function stopRotation(n) {
     if (!n) return;
     if (n.rotTimer) { clearTimeout(n.rotTimer); n.rotTimer = null; }
+    /* a swap held back to land under a reaction must not fire after the
+       rotation that scheduled it has been torn down — and dropping it means
+       the picture it was heading for never arrived, so wind the intent back
+       to whatever is actually on screen */
+    if (n.coverTimer) {
+      clearTimeout(n.coverTimer);
+      n.coverTimer = null;
+      n.wantUrl = n.mediaUrl;
+    }
   }
 
   /* buildGrid throws the whole registry away, so a REPEATING timer would
      otherwise outlive its element forever — unlike the one-shot swap timers,
      which fire once against a detached node and die. */
   function stopAllRotations() {
+    stopReactions();
     Object.keys(nodes).forEach(function (id) {
       var n = nodes[id];
       if (!n) return;
@@ -414,15 +425,37 @@
     });
   }
 
-  function rotateTo(e, n, url, r) {
-    if (n.mediaUrl === url) return;
-    n.mediaUrl = url;
+  function rotateTo(e, n, url, r, maxWait) {
+    /* wantUrl is where the rotation is heading; mediaUrl is what is actually
+       on screen. They differ only while a swap is held behind a reaction, and
+       keeping them apart is what stops a hide inside that window from leaving
+       the renderer convinced it already showed a picture it never did. */
+    if (n.wantUrl === url) return;
+    n.wantUrl = url;
     /* "animations off" means an instant cut, not a stopped rotation — the
        same meaning that flag has everywhere else in the product */
     var style = (r && r.anim) || 'fade';
     var ms = Math.max(0, (r && r.animMs !== undefined) ? r.animMs : (anim ? anim.changeMs : 450));
     var animate = !!(anim && anim.enabled !== false) && style !== 'none' && ms > 0;
-    swapMedia(e, n, url, animate, style, ms);
+
+    /* anything wired to this logo moves first; with "cover the swap" on, the
+       picture changes under the cover of that motion */
+    var wait = fireReactions(e.id);
+    /* never hold the swap past the tick that would cancel it — a long reaction
+       against a short interval would otherwise starve the rotation completely
+       and the logo would simply never change */
+    if (maxWait !== undefined) wait = Math.min(wait, Math.max(0, maxWait - 80));
+    if (n.coverTimer) { clearTimeout(n.coverTimer); n.coverTimer = null; }
+    if (!wait) {
+      n.mediaUrl = url;
+      swapMedia(e, n, url, animate, style, ms);
+      return;
+    }
+    n.coverTimer = setTimeout(function () {
+      n.coverTimer = null;
+      n.mediaUrl = url;
+      swapMedia(e, n, url, animate, style, ms);
+    }, wait);
   }
 
   /* the element as the last commit left it, by id */
@@ -462,15 +495,15 @@
       var cur = currentEl(e.id) || e;
       if (r.mode === 'cycle') {
         i = (i + 1) % list.length;
-        rotateTo(cur, n, list[i], r);
+        rotateTo(cur, n, list[i], r, every);
         n.rotTimer = setTimeout(tick, every);
       } else if (onAlt) {
         onAlt = false;
-        rotateTo(cur, n, main, r);
+        rotateTo(cur, n, main, r, every);
         n.rotTimer = setTimeout(tick, every);
       } else {
         onAlt = true;
-        rotateTo(cur, n, alts[i % alts.length], r);
+        rotateTo(cur, n, alts[i % alts.length], r, show);
         i++;
         n.rotTimer = setTimeout(tick, show);
       }
@@ -482,6 +515,80 @@
     if (!current || !current.elements) return;
     current.elements.forEach(function (e) {
       if (e.kind === 'image' && e.enabled !== false) syncRotation(e);
+    });
+  }
+
+  /* ------------------------------------------------- per-element motion
+     An element can override the look's entrance and can be told to react when
+     ANOTHER element's logo rotates — which is how a divider, rule or chevron
+     ends up carrying the swap instead of the logo just changing on its own.
+     Everything here is opt-in: 'inherit' and 0 mean "use the look's settings",
+     which is what every element built before this existed reports. */
+
+  function animOf(e) { return (e && e.anim) || {}; }
+
+  function applyElementAnim(e, box) {
+    var a = animOf(e);
+    if (a.inStyle && a.inStyle !== 'inherit') box.dataset.in = a.inStyle;
+    else delete box.dataset.in;
+    if (a.inMs > 0) box.style.setProperty('--el-in-ms', a.inMs + 'ms');
+    else box.style.removeProperty('--el-in-ms');
+    if (a.delayMs > 0) box.style.setProperty('--el-delay', a.delayMs + 'ms');
+    else box.style.removeProperty('--el-delay');
+  }
+
+  var REACT_CLASSES = ['react-flick', 'react-replay', 'react-pulse'];
+
+  /* Play one element's reaction. Returns how long to wait before the logo
+     should actually change, so the swap can land under the cover of the
+     motion rather than beside it. */
+  function playReaction(e) {
+    var n = nodes[e.id];
+    var a = animOf(e);
+    if (!n || !n.box) return 0;
+    var style = a.reactStyle || 'flick';
+    var ms = Math.max(0, a.reactMs === undefined ? 400 : a.reactMs);
+    if (style === 'none' || ms === 0) return 0;
+    if (!(anim && anim.enabled !== false)) return 0;   /* animations off: cut */
+    /* the in/out sequence owns .anim-el's animation while it runs, so a
+       reaction started now would never be seen — and covering the swap behind
+       an invisible reaction would only delay it for nothing */
+    if (stage.classList.contains('anim-in') || stage.classList.contains('anim-out')) return 0;
+
+    var box = n.box;
+    if (n.reactTimer) { clearTimeout(n.reactTimer); n.reactTimer = null; }
+    REACT_CLASSES.forEach(function (c) { box.classList.remove(c); });
+    box.style.setProperty('--react-ms', ms + 'ms');
+    void box.offsetWidth;                              /* restart the animation */
+    box.classList.add('react-' + style);
+    n.reactTimer = setTimeout(function () {
+      n.reactTimer = null;
+      REACT_CLASSES.forEach(function (c) { box.classList.remove(c); });
+    }, ms + 60);
+    /* halfway through is where a flick or a replay is at its most opaque */
+    return a.cover === false ? 0 : Math.round(ms * 0.5);
+  }
+
+  /* Every element that has asked to react to this one's logo changing.
+     Returns the longest cover delay any of them wants. */
+  function fireReactions(sourceId) {
+    var wait = 0;
+    if (!current || !current.elements) return 0;
+    current.elements.forEach(function (o) {
+      if (o.id === sourceId || o.enabled === false) return;
+      if (animOf(o).reactTo !== sourceId) return;
+      wait = Math.max(wait, playReaction(o));
+    });
+    return wait;
+  }
+
+  function stopReactions() {
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (!n) return;
+      if (n.reactTimer) { clearTimeout(n.reactTimer); n.reactTimer = null; }
+      if (n.coverTimer) { clearTimeout(n.coverTimer); n.coverTimer = null; }
+      if (n.box) REACT_CLASSES.forEach(function (c) { n.box.classList.remove(c); });
     });
   }
 
@@ -518,6 +625,7 @@
         box.className = 'box anim-el' + (e.kind === 'image' ? ' img-box' : '');
         box.dataset.id = e.id;
         box.style.setProperty('--i', i.toFixed(2));
+        applyElementAnim(e, box);
 
         if (e.kind === 'image') {
           var img = makeMedia((e.image && e.image.url) || '');
@@ -608,6 +716,9 @@
       n.img.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
       n.img.style.objectFit = (e.image && e.image.fit) || 'contain';
     }
+    /* motion is not part of structureOf(), so a change to it arrives as a
+       morph and has to be re-stamped here rather than at buildGrid */
+    applyElementAnim(e, box);
   }
 
   /* ------------------------------------------------------------- updates */
@@ -732,13 +843,29 @@
     var n = nodes[e.id];
     if (!n || !n.img) return;
     var target = (e.image && e.image.url) || '';
-    if (n.mediaUrl === target) return;
+    if (n.mediaUrl === target) { n.wantUrl = target; return; }
     n.mediaUrl = target;
+    n.wantUrl = target;
     swapMedia(e, n, target, animate, 'fade', anim ? anim.changeMs : 450);
+  }
+
+  /* the longest per-element entrance, so playIn's window can cover an element
+     whose own duration and delay outrun the look's. Recomputed per commit, not
+     per grid rebuild: motion is not part of structureOf(), so a change to it
+     arrives as a morph and would otherwise leave this value stale. */
+  function computeMaxElIn(look) {
+    maxElIn = 0;
+    (look.elements || []).forEach(function (el) {
+      if (!el || el.enabled === false) return;
+      var ea = el.anim || {};
+      var dur = ea.inMs > 0 ? ea.inMs : (anim ? anim.inMs : 700);
+      maxElIn = Math.max(maxElIn, (ea.delayMs || 0) + dur);
+    });
   }
 
   function updateDom(look, animate) {
     setStageVars(look);
+    computeMaxElIn(look);
 
     var d = stage.dataset;
     d.dir = resolveDir(look);
@@ -773,7 +900,9 @@
   /* the last element starts staggerMs * maxStagger after the first, so the
      whole sequence needs that much longer than a single element's duration */
   function totalFor(ms) { return ms + anim.staggerMs * maxStagger + 80; }
-  function inTotal(ms) { return totalFor(ms === undefined ? anim.inMs : ms); }
+  function inTotal(ms) {
+    return Math.max(totalFor(ms === undefined ? anim.inMs : ms), maxElIn + 80);
+  }
   function outTotal(ms) { return totalFor(ms === undefined ? anim.outMs : ms); }
 
   /* quickOutIn shortens these; if it is pre-empted the configured values must

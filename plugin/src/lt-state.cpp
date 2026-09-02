@@ -1,6 +1,7 @@
 #include "lt-state.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -34,6 +35,7 @@ static json minimalDefaults()
 	    "text": { "kind": "text", "name": "Text", "enabled": true,
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
 	      "text": "New text", "snippets": [],
+	      "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
 	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 40, "weight": 700,
 	        "letterSpacing": 0, "padX": 26, "padY": 12, "lineHeight": 1.2, "align": "auto",
 	        "nowrap": false, "minWidth": 0,
@@ -46,6 +48,7 @@ static json minimalDefaults()
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
 	      "image": { "url": "", "fit": "contain", "scale": 1, "sources": [],
 	        "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
+	      "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
 	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 56, "weight": 700,
 	        "letterSpacing": 0, "padX": 12, "padY": 12, "lineHeight": 1.2, "align": "center",
 	        "nowrap": false, "minWidth": 160,
@@ -235,6 +238,52 @@ json LtState::normalizeElement(const json &in)
 	}
 	if (place["spanAll"].get<bool>()) { place["row"] = 0; place["rowSpan"] = 1; }
 	out["place"] = place;
+
+	/* per-element motion — mirror of the anim block in normalizeElement() in
+	   server.js. "inherit"/0 mean "use the look's animation settings", which
+	   is what every element predating this gets on load. reactTo names ANOTHER
+	   element whose logo rotation this one reacts to, so a divider or chevron
+	   can carry the swap instead of the logo changing on its own. */
+	json an = (out.contains("anim") && out["anim"].is_object()) ? out["anim"] : json::object();
+	std::string inStyle = (an.contains("inStyle") && an["inStyle"].is_string())
+	                              ? an["inStyle"].get<std::string>()
+	                              : "inherit";
+	if (inStyle != "slide-up" && inStyle != "slide-side" && inStyle != "wipe" &&
+	    inStyle != "fade" && inStyle != "pop")
+		inStyle = "inherit";
+	std::string reactStyle = (an.contains("reactStyle") && an["reactStyle"].is_string())
+	                                 ? an["reactStyle"].get<std::string>()
+	                                 : "flick";
+	if (reactStyle != "replay" && reactStyle != "pulse" && reactStyle != "none")
+		reactStyle = "flick";
+	/* validated, not truncated — mirror of the regex in server.js. substr(0,64)
+	   cut bytes where the JS cut UTF-16 code units, so the two engines could
+	   disagree and the C++ side could even split a character. */
+	std::string reactTo;
+	if (an.contains("reactTo") && an["reactTo"].is_string()) {
+		const std::string cand = an["reactTo"].get<std::string>();
+		bool okId = !cand.empty() && cand.size() <= 64;
+		for (char c : cand) {
+			if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) {
+				okId = false;
+				break;
+			}
+		}
+		if (okId)
+			reactTo = cand;
+	}
+	/* an element cannot react to its own logo changing */
+	if (reactTo == out.value("id", std::string()))
+		reactTo.clear();
+	out["anim"] = json{
+		{ "inStyle", inStyle },
+		{ "inMs", clampInt(numOr(an, "inMs", 0), 0, 5000) },
+		{ "delayMs", clampInt(numOr(an, "delayMs", 0), 0, 5000) },
+		{ "reactTo", reactTo },
+		{ "reactStyle", reactStyle },
+		{ "reactMs", clampInt(numOr(an, "reactMs", 400), 0, 4000) },
+		{ "cover", boolOr(an, "cover", true) },
+	};
 
 	if (kind == "text") {
 		if (!out.contains("text") || !out["text"].is_string())
@@ -1227,6 +1276,13 @@ void LtState::handleClientMessage(const json &msg)
 			json n = normalizeElement(e);
 			if (!n.is_null())
 				keep.push_back(n);
+		}
+		/* nothing may be left reacting to an element that no longer exists —
+		   mirror of the scrub in the element-remove handler in server.js */
+		for (auto &e : keep) {
+			if (e.contains("anim") && e["anim"].is_object() &&
+			    e["anim"].value("reactTo", std::string()) == id)
+				e["anim"]["reactTo"] = "";
 		}
 		st["pending"]["elements"] = keep;
 		normalizePlacement(st["pending"]["elements"]);

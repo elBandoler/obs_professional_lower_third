@@ -16,6 +16,8 @@ animated — when you press **SHOW** or OBS's own **Transition** button.
 - **Saved text presets per element** — recall a wording with one tap (loads to preview only)
 - Animations: slide / wipe / fade / pop in-out, animated text swaps, property morphing,
   stagger, easing, durations — or disable animations entirely for instant cuts
+- **Per-element motion** — give one element its own entrance, and link it to another
+  element's logo rotation so it carries the swap (a chevron that flicks the logo over)
 - Presets (built-in + your own), auto-hide timer, logo upload
 - Control panel docks **inside** OBS; also works from another browser/tablet on your machine
 - HTTP API for Stream Deck / hotkey tools
@@ -168,6 +170,22 @@ Advanced sections:
     "unsaved" every few seconds, and it pauses whenever the lower third is off air.
   - Mix freely — a still main logo that flips to a video sting and back is just three
     entries and *Swap out, then return to main*.
+- **Motion (per element)** — every element card has a **MOTION** tab, so one element can
+  move differently from the rest.
+  - **Entrance** overrides the look's in-animation for this element alone. *Slide from the
+    side* enters from the right on an RTL layout and from the left on LTR; the exit mirrors
+    whatever you pick. **Entrance time** and **Extra delay** let you land it after the
+    elements around it — the delay is on top of the stagger, not instead of it.
+  - **React to a logo change** links this element to another element's logo rotation. Pick a
+    logo under *When this changes*, and every time that logo rotates to its next picture,
+    this element **flicks through**, **enters again** or **pulses**. Put a chevron, a rule or
+    a divider next to a rotating logo and it carries the change instead of the picture
+    swapping on its own.
+  - **Cover the swap** holds the logo change until the reacting element is halfway through
+    its move, so the picture changes *behind* the motion rather than beside it. Turn it off
+    if you want them to fire together.
+  - Any element can react to any image element — it is not tied to a particular shape, so
+    whatever art you drop in is what moves.
 - **Text presets (per element)** — under every text element, **＋ save text** stores its
   current wording. Tap a saved chip to load it back. Loading only fills the **preview** —
   nothing reaches air until you press SHOW.
