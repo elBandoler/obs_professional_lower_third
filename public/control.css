@@ -122,11 +122,10 @@ body.mode-simple #mode-toggle { color: var(--amber); border-color: #6a5426; }
 .pill.err { color: #ee7a76; border-color: #6a2e2c; }
 .pill.onair { color: #fff; background: var(--red); border-color: var(--red); }
 
-/* the SIMPLE view's preset heading, separating them from the text boxes */
+/* heading over the quick-launch grid (ADVANCED only — see #simple-presets).
+   No rule of its own: it is the first thing in the panel, so a top border
+   would draw a second line right under the section's own summary. */
 .quick-head {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1.5px;
@@ -625,18 +624,19 @@ button.snip-save:hover { color: var(--text); }
 
 /* ------------------------------------------------------- simple mode */
 
-/* SIMPLE keeps only the quick panel and the preset list */
+/* SIMPLE keeps the preview, SHOW/HIDE and the text boxes — nothing else.
+   Every control that can load or edit a preset is hidden, because one tap
+   replaces the whole pending look. Presets are handled in ADVANCED. */
 body.mode-simple #sec-elements,
 body.mode-simple #sec-layout,
 body.mode-simple #sec-type,
 body.mode-simple #sec-edges,
 body.mode-simple #sec-anim,
 body.mode-simple #sec-obs,
-/* the operator view already has the quick-launch grid; the full preset
-   editor (overwrite / delete) has no business in front of a live operator */
-body.mode-simple #sec-presets { display: none; }
+body.mode-simple #sec-presets,
+body.mode-simple #simple-presets { display: none; }
 body.mode-simple #sec-simple > summary { display: none; }
-body:not(.mode-simple) #simple-texts { display: none; }
+body:not(.mode-simple) #simple-edit { display: none; }
 
 #quick-grid {
   display: grid;

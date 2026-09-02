@@ -117,11 +117,12 @@ handle to reset). The size is remembered per machine.
 The dock has two views, toggled with the **SIMPLE / ADVANCED** button in its header
 (remembered per machine):
 
-- **Simple** — operator mode: the SHOW / HIDE controls, one text box per text element with
-  its saved-text chips underneath, and — **at the bottom, out of the way** — quick-launch
-  buttons for every saved preset (tap → loads into the preview). Loading a preset replaces
-  the whole look, so it sits below the text boxes where a hand won't find it by accident;
-  the preset editor (overwrite / delete) is hidden entirely in this view.
+- **Simple** — operator mode: the preview, the SHOW / HIDE controls, and one text box per
+  text element with its saved-text chips underneath. **Nothing that loads a preset is
+  reachable here** — a single tap would replace the whole look — so presets, both the
+  quick-launch buttons and the editor, are hidden in this view. Switch to ADVANCED to load
+  one. Saved *texts* still work per element, which is the recall an operator actually wants
+  mid-show.
 - **Advanced** — the full editor below.
 
 Advanced sections:
@@ -167,11 +168,12 @@ Advanced sections:
   Any element can override the global edge style with its own.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
-- **Presets** (the last section, deliberately — loading one throws away everything in the
-  preview) — five built in, including **Headline + subtitle** (a big headline with a smaller
-  line under it) — plus save/load/overwrite/delete of your own complete looks (all elements +
-  style + animation). Loading a preset only changes the *preview*; SHOW puts it on air.
-  Presets are what the SIMPLE view's quick-launch buttons run.
+- **Presets** and **Quick** (the last two sections, deliberately — loading one throws away
+  everything in the preview, so neither sits where a hand lands first) — five built in,
+  including **Headline + subtitle** (a big headline with a smaller line under it) — plus
+  save/load/overwrite/delete of your own complete looks (all elements + style + animation).
+  *Quick* is the same list as big one-tap buttons. Loading a preset only changes the
+  *preview*; SHOW puts it on air. Both are ADVANCED-only.
 
 Hebrew/Arabic content is auto-detected (or force RTL) and the whole layout mirrors properly.
 

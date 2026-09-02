@@ -1071,17 +1071,19 @@
     { sec: 'obs', type: 'select', label: 'Transition does', options: [{ v: 'take', l: 'Update what is on air' }, { v: 'take-show', l: 'Update, and show if hidden' }], get: g('settings.obs.transitionAction'), set: s('settings.obs.transitionAction') },
   ];
 
+  /* Anything that LOADS a preset goes at the bottom. Loading one throws away
+     everything in the preview, so neither the quick-launch buttons nor the
+     preset editor may sit where a hand lands first. In SIMPLE view #sec-simple
+     is the only section on screen, so its position here only affects ADVANCED. */
   var SECTIONS = [
-    { id: 'simple', label: 'QUICK', open: true },
     { id: 'elements', label: 'ELEMENTS', open: true },
     { id: 'layout', label: 'LAYOUT & POSITION' },
     { id: 'type', label: 'FONTS' },
     { id: 'edges', label: 'EDGES & EFFECTS' },
     { id: 'anim', label: 'ANIMATION' },
     { id: 'obs', label: 'OBS & INTEGRATIONS' },
-    /* last on purpose: loading a preset replaces the whole look, so it must
-       not sit where a hand reaches first */
     { id: 'presets', label: 'PRESETS', open: true },
+    { id: 'simple', label: 'QUICK', open: true },
   ];
 
   var globalSyncs = [];
@@ -1115,17 +1117,27 @@
 
   function buildSimpleUi() {
     var body = $('#sec-body-simple');
-    body.appendChild(el('div', 'hint', 'Edit the text, then press SHOW to put it on air.'));
+    /* the text editor half — hidden in ADVANCED, which has the full element
+       cards instead, so its hint must go with it rather than stay behind */
+    var edit = el('div', null);
+    edit.id = 'simple-edit';
+    edit.appendChild(el('div', 'hint', 'Edit the text, then press SHOW to put it on air.'));
     var texts = el('div', null);
     texts.id = 'simple-texts';
-    body.appendChild(texts);
-    /* presets go under the text boxes: tapping one throws away everything in
-       the preview, so it must not be the first thing a thumb finds mid-show */
-    body.appendChild(el('div', 'quick-head', 'LOAD A PRESET'));
-    body.appendChild(el('div', 'hint', 'Replaces the whole look in the preview — nothing reaches air until SHOW.'));
+    edit.appendChild(texts);
+    body.appendChild(edit);
+
+    /* the quick-launch half — ADVANCED only. Tapping one of these throws away
+       everything in the preview, which is not a thing to leave under an
+       operator's thumb mid-show, so SIMPLE hides it entirely. */
+    var pres = el('div', null);
+    pres.id = 'simple-presets';
+    pres.appendChild(el('div', 'quick-head', 'LOAD A PRESET'));
+    pres.appendChild(el('div', 'hint', 'Replaces the whole look in the preview — nothing reaches air until SHOW.'));
     var grid = el('div', null);
     grid.id = 'quick-grid';
-    body.appendChild(grid);
+    pres.appendChild(grid);
+    body.appendChild(pres);
   }
 
   function buildElementsUi() {
@@ -1647,12 +1659,13 @@
     document.body.classList.toggle('mode-simple', MODE === 'simple');
     $('#mode-toggle').textContent = MODE === 'simple' ? 'ADVANCED' : 'SIMPLE';
     /* QUICK is the whole of SIMPLE — if it was collapsed in ADVANCED the panel
-       would otherwise come up empty with no header left to click */
+       would otherwise come up empty, with its summary hidden and nothing left
+       to click. Nothing else is forced open: PRESETS is hidden in SIMPLE, and
+       forcing it used to undo a collapse the operator made on purpose in
+       ADVANCED — the one section holding every load/overwrite/delete button. */
     if (MODE === 'simple') {
       var quick = $('#sec-simple');
       if (quick) quick.open = true;
-      var presets = $('#sec-presets');
-      if (presets) presets.open = true;
     }
   }
   $('#mode-toggle').addEventListener('click', function () {
