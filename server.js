@@ -46,6 +46,11 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.resolve(ROOT, argVal('data', 'data'));
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+/* Keep this in step with UPLOAD_MAX in plugin/src/lt-server.cpp — an upload
+   that works in OBS and fails in the standalone server is a mystery nobody
+   enjoys. Both engines buffer the whole body in memory before writing, and
+   the plugin's buffer lives inside the OBS process, so this is not free. */
+const UPLOAD_MAX = 64 * 1024 * 1024;
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -110,7 +115,8 @@ function minimalDefaults() {
       image: {
         kind: 'image', name: 'Image', enabled: true,
         place: { row: 0, order: 0, stretch: false, rowSpan: 1 },
-        image: { url: '', fit: 'contain', scale: 1 },
+        image: { url: '', fit: 'contain', scale: 1, sources: [],
+          rotate: { mode: 'off', everyMs: 8000, showMs: 6000, anim: 'fade', animMs: 450 } },
         style: deepMerge(clone(elStyle), { padX: 12, padY: 12, minWidth: 160, align: 'center' }),
       },
     },
@@ -215,6 +221,39 @@ function normalizeElement(el) {
     delete out.image;
   } else {
     out.image = deepMerge(base.image, out.image || {});
+    /* `url` is the MAIN logo and stays authoritative — every existing consumer
+       reads it. `sources` holds the ALTERNATES the rotation cycles to, so
+       nothing has to be derived and rotation never writes back into state.
+       NB: scale is legitimately fractional (a preset ships 0.9) — never put
+       it through an integer path, in either engine. */
+    const img = out.image;
+    /* Drop blanks BEFORE capping, and require a real string: the C++ mirror
+       does both, and capping first let a single blank entry cost the last
+       real logo. Only a string counts as a url — coercing 5 or true into one
+       diverges from the plugin, which drops them. */
+    img.sources = (Array.isArray(img.sources) ? img.sources : [])
+      .filter((sr) => sr && typeof sr.url === 'string' && sr.url)
+      .map((sr) => ({ url: sr.url }))
+      .slice(0, 12);
+    const rot = (img.rotate && typeof img.rotate === 'object') ? img.rotate : {};
+    const MODES = ['off', 'cycle', 'return'];
+    const ANIMS = ['fade', 'slide', 'flip', 'zoom', 'none'];
+    /* `|| default` would turn a legitimate 0 into the default — which also
+       made this pass non-idempotent, and disagreed with the plugin, whose
+       numOr() only falls back when the value is absent or not a number.
+       Numbers only, for the same reason. */
+    /* Math.trunc, not round: the C++ clampInt casts with (int)v, and 8000.6
+       must not become 8001 here and 8000 there. */
+    const num = (v, dflt) => (typeof v === 'number' && isFinite(v) ? Math.trunc(v) : dflt);
+    img.rotate = {
+      mode: MODES.indexOf(rot.mode) >= 0 ? rot.mode : 'off',
+      everyMs: Math.max(500, Math.min(600000, num(rot.everyMs, 8000))),
+      showMs: Math.max(200, Math.min(600000, num(rot.showMs, 6000))),
+      anim: ANIMS.indexOf(rot.anim) >= 0 ? rot.anim : 'fade',
+      animMs: Math.max(0, Math.min(4000, num(rot.animMs, 450))),
+    };
+    /* nothing to rotate to means nothing rotates, whatever the mode says */
+    if (!img.sources.length) img.rotate.mode = 'off';
     delete out.text;
     delete out.snippets;
   }
@@ -1085,6 +1124,12 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
+  /* video logos — without these serveFile answers application/octet-stream
+     and Chromium refuses to decode the file in a <video> */
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/mp4',
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
@@ -1102,17 +1147,43 @@ function sendJson(res, code, obj) {
   res.end(raw);
 }
 
-function serveFile(res, absPath) {
+function serveFile(res, absPath, req) {
   fs.readFile(absPath, (err, buf) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }
     const ext = path.extname(absPath).toLowerCase();
-    res.writeHead(200, {
+    const head = {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Cache-Control': 'no-store',
-    });
+      /* the extension is caller-supplied at upload time and nothing sniffs
+         the bytes, so don't let the browser second-guess the type either */
+      'X-Content-Type-Options': 'nosniff',
+      'Accept-Ranges': 'bytes',
+    };
+    /* civetweb serves ranges natively, so without this a large video logo
+       plays under the plugin and stalls under the Node server */
+    const range = req && req.headers && req.headers.range;
+    const m = range && /^bytes=(\d*)-(\d*)$/.exec(String(range).trim());
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? parseInt(m[1], 10) : NaN;
+      let end = m[2] ? parseInt(m[2], 10) : NaN;
+      if (isNaN(start)) { start = buf.length - end; end = buf.length - 1; }
+      if (isNaN(end)) end = buf.length - 1;
+      if (start < 0) start = 0;
+      if (end > buf.length - 1) end = buf.length - 1;
+      if (start > end) {
+        res.writeHead(416, { 'Content-Range': 'bytes */' + buf.length });
+        return res.end();
+      }
+      head['Content-Range'] = 'bytes ' + start + '-' + end + '/' + buf.length;
+      head['Content-Length'] = end - start + 1;
+      res.writeHead(206, head);
+      return res.end(buf.slice(start, end + 1));
+    }
+    head['Content-Length'] = buf.length;
+    res.writeHead(200, head);
     res.end(buf);
   });
 }
@@ -1127,13 +1198,50 @@ function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let over = false;
     req.on('data', (c) => {
       size += c.length;
-      if (size > limit) { reject(new Error('Body too large')); req.destroy(); return; }
-      chunks.push(c);
+      if (size > limit) {
+        /* keep draining instead of destroying the socket: killing it here
+           meant the handler's 400 never reached the client, which just saw
+           the connection drop with no explanation */
+        if (!over) { over = true; chunks.length = 0; }
+        return;
+      }
+      if (!over) chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => {
+      if (over) return reject(new Error('File too large (max ' + Math.round(limit / (1024 * 1024)) + ' MB)'));
+      resolve(Buffer.concat(chunks));
+    });
     req.on('error', reject);
+  });
+}
+
+/* Stream an upload straight to disk. Buffering it first cost ~1.7x the file
+   size in memory before a single byte was written, and the over-cap check
+   only ran once the whole thing was already in RAM. */
+function saveUpload(req, absPath, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let failed = null;
+    const out = fs.createWriteStream(absPath);
+    const fail = (err) => {
+      if (failed) return;
+      failed = err;
+      req.unpipe(out);
+      out.destroy();
+      fs.unlink(absPath, () => reject(err));   /* never leave a partial file */
+      req.resume();
+    };
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) fail(new Error('File too large (max ' + Math.round(limit / (1024 * 1024)) + ' MB)'));
+    });
+    req.on('error', fail);
+    out.on('error', fail);
+    out.on('finish', () => { if (!failed) resolve(size); });
+    req.pipe(out);
   });
 }
 
@@ -1222,19 +1330,27 @@ async function handleApi(req, res, url) {
   }
 
   if (act === 'upload' && req.method === 'POST') {
+    const rawName = url.searchParams.get('name') || 'upload.png';
+    /* Take the extension off the basename and match it as-is. The old
+       [^.\w] strip was the only reason a name like "x.m p4" was promoted to
+       a video, and it protected nothing the allowlist does not already. */
+    const ext = path.extname(path.basename(rawName)).toLowerCase();
+    const imgExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+    /* animated logos: GIF already rode in as an image; these render as
+       <video muted loop> in the overlay. Keep in step with lt-server.cpp. */
+    const vidExt = ['.mp4', '.webm', '.mov', '.m4v'];
+    const fontExt = ['.ttf', '.otf', '.woff', '.woff2'];
+    /* an unrecognised extension is forced to .png rather than rejected — that
+       fallback is what stops a caller-supplied name deciding what is served */
+    const useExt = imgExt.includes(ext) || vidExt.includes(ext) || fontExt.includes(ext) ? ext : '.png';
+    const prefix = fontExt.includes(useExt) ? 'font-' : 'logo-';
+    const name = prefix + crypto.randomBytes(4).toString('hex') + useExt;
     try {
-      const body = await readBody(req, 20 * 1024 * 1024);
-      const rawName = url.searchParams.get('name') || 'upload.png';
-      const ext = (path.extname(rawName).toLowerCase() || '.png').replace(/[^.\w]/g, '');
-      const imgExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
-      const fontExt = ['.ttf', '.otf', '.woff', '.woff2'];
-      const useExt = imgExt.includes(ext) || fontExt.includes(ext) ? ext : '.png';
-      const prefix = fontExt.includes(useExt) ? 'font-' : 'logo-';
-      const name = prefix + crypto.randomBytes(4).toString('hex') + useExt;
-      fs.writeFileSync(path.join(UPLOAD_DIR, name), body);
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      await saveUpload(req, path.join(UPLOAD_DIR, name), UPLOAD_MAX);
       return sendJson(res, 200, { ok: true, url: '/uploads/' + name });
     } catch (e) {
-      return sendJson(res, 400, { ok: false, error: e.message });
+      return sendJson(res, 413, { ok: false, error: e.message });
     }
   }
 
@@ -1256,18 +1372,18 @@ function handleHttp(req, res) {
     res.writeHead(302, { Location: '/control' });
     return res.end();
   }
-  if (p === '/overlay') return serveFile(res, path.join(PUBLIC_DIR, 'overlay.html'));
-  if (p === '/control') return serveFile(res, path.join(PUBLIC_DIR, 'control.html'));
+  if (p === '/overlay') return serveFile(res, path.join(PUBLIC_DIR, 'overlay.html'), req);
+  if (p === '/control') return serveFile(res, path.join(PUBLIC_DIR, 'control.html'), req);
 
   if (p.startsWith('/uploads/')) {
     const abs = safeJoin(UPLOAD_DIR, p.slice('/uploads/'.length));
     if (!abs) { res.writeHead(403); return res.end(); }
-    return serveFile(res, abs);
+    return serveFile(res, abs, req);
   }
 
   const abs = safeJoin(PUBLIC_DIR, p);
   if (!abs) { res.writeHead(403); return res.end(); }
-  return serveFile(res, abs);
+  return serveFile(res, abs, req);
 }
 
 /* ---------------------------------------------------------------- boot */

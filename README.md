@@ -7,6 +7,9 @@ animated — when you press **SHOW** or OBS's own **Transition** button.
 - **Fully dynamic layout** — add, remove, duplicate and move as many text and image elements
   as you like. Two-line news straps, headline-only, badges/tags, a logo on either side or
   filling the whole height: all of it is just elements you arrange.
+- **Video, GIF and rotating logos** — a logo can be a still, an animated GIF or a short
+  muted video (MP4/WebM/MOV), and one element can hold several and swap between them on a
+  timer, either cycling or ducking away from a main logo and back
 - Full styling control per element: colours, opacity, **multi-stop linear/radial/conic
   gradients**, background pictures, fonts, sizes, weights, spacing, padding, RTL/LTR,
   slanted/rounded/square edges, accent strips, shadows
@@ -146,6 +149,25 @@ Advanced sections:
     whole block instead of a badge above it.
   - Columns are shared between rows, so an element keeps lining up with the one above it
     (a badge stays exactly above a logo).
+- **Logos: stills, video and rotation** — an image element's picture can be a still
+  (PNG/JPG/SVG/**GIF**, which animates as it always has) or a short **video**
+  (**MP4 / WebM / MOV**). Video logos play muted and looping — upload one with the same
+  📁 button; nothing else to set up.
+  - Under **MORE LOGOS** you can give one element several logos. The picture in the *Image*
+    box stays the **main** logo; the ones you add below are the alternates.
+  - **Rotate logos** then offers two behaviours:
+    - **Cycle through all** — the main logo and every alternate take turns, swapping every
+      *Swap every* seconds.
+    - **Swap out, then return to main** — the main logo stays up; every *Swap every* seconds
+      an alternate takes over for *Alternate stays for* seconds, then the main logo comes
+      back. This is the one for a sponsor or a "coming up next" ident.
+  - The change is animated — **fade, slide, flip, zoom** or a hard **cut** — with its own
+    duration. With the master **animations** switch off, rotation still runs but cuts
+    instead of animating.
+  - Rotation is a display behaviour: it never edits your look, so the dock does not go
+    "unsaved" every few seconds, and it pauses whenever the lower third is off air.
+  - Mix freely — a still main logo that flips to a video sting and back is just three
+    entries and *Swap out, then return to main*.
 - **Text presets (per element)** — under every text element, **＋ save text** stores its
   current wording. Tap a saved chip to load it back. Loading only fills the **preview** —
   nothing reaches air until you press SHOW.
@@ -199,6 +221,9 @@ GET http://127.0.0.1:3620/api/quit      shut the server down
   independent second lower third (own overlay + dock URLs).
 - **Control from a tablet/another PC:** start with `node server.js --host 0.0.0.0` and open
   `http://<your-pc-ip>:3620/control` (allow it in Windows Firewall).
+- **Video logo not playing?** It must be a format the OBS browser engine can decode — WebM
+  (VP8/VP9) and H.264 MP4 are safe. Uploads are capped at 64 MB; a logo sting should be a
+  small fraction of that. Audio is always muted.
 - **Fonts:** the overlay uses fonts installed on the OBS machine (default stack is
   Hebrew-friendly). For Google Fonts, paste the CSS URL into *Typography → Font CSS URL* and
   put the family name in the font stack.

@@ -44,7 +44,8 @@ static json minimalDefaults()
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } },
 	    "image": { "kind": "image", "name": "Image", "enabled": true,
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
-	      "image": { "url": "", "fit": "contain", "scale": 1 },
+	      "image": { "url": "", "fit": "contain", "scale": 1, "sources": [],
+	        "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
 	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 56, "weight": 700,
 	        "letterSpacing": 0, "padX": 12, "padY": 12, "lineHeight": 1.2, "align": "center",
 	        "nowrap": false, "minWidth": 160,
@@ -243,6 +244,50 @@ json LtState::normalizeElement(const json &in)
 		out.erase("image");
 	} else {
 		out["image"] = deepMerge(base["image"], out.contains("image") ? out["image"] : json::object());
+		/* mirror of the image block in normalizeElement() in server.js.
+		   "url" is the MAIN logo and stays authoritative; "sources" holds the
+		   ALTERNATES the rotation cycles to, so nothing is derived and the
+		   rotation never writes back into state.
+		   NB: scale is legitimately fractional (a preset ships 0.9) — it is
+		   deliberately left alone here. Do not route it through clampInt. */
+		json &img = out["image"];
+		json srcs = json::array();
+		if (img.contains("sources") && img["sources"].is_array()) {
+			for (auto &sr : img["sources"]) {
+				if (srcs.size() >= 12)
+					break;
+				std::string u;
+				if (sr.is_object() && sr.contains("url") && sr["url"].is_string())
+					u = sr["url"].get<std::string>();
+				if (!u.empty())
+					srcs.push_back(json{ { "url", u } });
+			}
+		}
+		img["sources"] = srcs;
+
+		json rot = (img.contains("rotate") && img["rotate"].is_object())
+		                   ? img["rotate"]
+		                   : json::object();
+		std::string mode = (rot.contains("mode") && rot["mode"].is_string())
+		                           ? rot["mode"].get<std::string>()
+		                           : "off";
+		if (mode != "cycle" && mode != "return")
+			mode = "off";
+		std::string ranim = (rot.contains("anim") && rot["anim"].is_string())
+		                            ? rot["anim"].get<std::string>()
+		                            : "fade";
+		if (ranim != "slide" && ranim != "flip" && ranim != "zoom" && ranim != "none")
+			ranim = "fade";
+		/* nothing to rotate to means nothing rotates, whatever the mode says */
+		if (srcs.empty())
+			mode = "off";
+		img["rotate"] = json{
+			{ "mode", mode },
+			{ "everyMs", clampInt(numOr(rot, "everyMs", 8000), 500, 600000) },
+			{ "showMs", clampInt(numOr(rot, "showMs", 6000), 200, 600000) },
+			{ "anim", ranim },
+			{ "animMs", clampInt(numOr(rot, "animMs", 450), 0, 4000) },
+		};
 		out.erase("text");
 		out.erase("snippets");
 	}

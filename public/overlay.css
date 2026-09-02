@@ -100,7 +100,9 @@ body.bg-green { background: #00b140; }
   justify-content: center;
   overflow: hidden;
 }
-.box.img-box img {
+/* a logo is a still or a short video — both sit in the same slot */
+.box.img-box img,
+.box.img-box video {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -173,7 +175,8 @@ body.bg-green { background: #00b140; }
 #stage.prop-anim .txt {
   transition: height var(--change-ms, 450ms) var(--ease);
 }
-#stage.prop-anim .box.img-box img {
+#stage.prop-anim .box.img-box img,
+#stage.prop-anim .box.img-box video {
   transition: transform var(--change-ms, 450ms) var(--ease),
               opacity var(--change-ms, 450ms) var(--ease);
 }
@@ -190,6 +193,8 @@ body.bg-green { background: #00b140; }
 @keyframes kf-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes kf-fade-in  { from { opacity: 0; } to { opacity: 1; } }
 
+/* --swap-ms is set per swap by the rotation; a plain commit leaves it unset
+   and falls back to the look's change duration */
 .img-exit {
   position: absolute;
   top: 50%; left: 50%;
@@ -197,9 +202,43 @@ body.bg-green { background: #00b140; }
   max-width: calc(100% - 4px);
   max-height: calc(100% - 4px);
   object-fit: contain;
-  animation: kf-fade-out var(--change-ms, 450ms) var(--ease) both;
+  animation: kf-fade-out var(--swap-ms, var(--change-ms, 450ms)) var(--ease) both;
 }
-.img-enter { animation: kf-fade-in var(--change-ms, 450ms) var(--ease) both; }
+.img-enter { animation: kf-fade-in var(--swap-ms, var(--change-ms, 450ms)) var(--ease) both; }
+
+/* logo-swap styles. Every transform keyframe has to carry the centring
+   translate and --img-scale, or the picture jumps out of its box mid-swap. */
+.img-exit.sw-slide  { animation-name: kf-logo-slide-out; }
+.img-enter.sw-slide { animation-name: kf-logo-slide-in; }
+.img-exit.sw-flip   { animation-name: kf-logo-flip-out; }
+.img-enter.sw-flip  { animation-name: kf-logo-flip-in; }
+.img-exit.sw-zoom   { animation-name: kf-logo-zoom-out; }
+.img-enter.sw-zoom  { animation-name: kf-logo-zoom-in; }
+
+@keyframes kf-logo-slide-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 0; transform: translate(-50%, -150%) scale(var(--img-scale, 1)); }
+}
+@keyframes kf-logo-slide-in {
+  from { opacity: 0; transform: translate(-50%, 50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+}
+@keyframes kf-logo-flip-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(0deg); }
+  to   { opacity: 0; transform: translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(90deg); }
+}
+@keyframes kf-logo-flip-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(-90deg); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(0deg); }
+}
+@keyframes kf-logo-zoom-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--img-scale, 1) * 1.35)); }
+}
+@keyframes kf-logo-zoom-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--img-scale, 1) * 0.65)); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+}
 
 /* ------------------------------------------------------ in/out anims */
 

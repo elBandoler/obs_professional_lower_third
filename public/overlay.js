@@ -26,7 +26,7 @@
   var isShown = false;  // program visibility
   var animTimer = null;
   var grid = null;      // the .lt-grid node
-  var nodes = {};       // element id -> { cell, box, line, txt, img }
+  var nodes = {};       // element id -> { cell, box, line, txt, img, rotTimer }
   var maxStagger = 0;   // highest --i in the current layout
   var outInFlight = false;
   var deferredLook = null;
@@ -274,8 +274,220 @@
     ].join('|');
   }
 
+  /* ------------------------------------------------------------- media
+     A logo can be a still (png/jpg/svg/gif) or a short video (mp4/webm/mov).
+     The kind is sniffed from the URL at render time and never stored: putting
+     it in the look would mean two engines sniffing in two languages, and
+     changing a .png to an .mp4 would need a migration. */
+
+  function mediaKind(url) {
+    var u = String(url || '').split('?')[0].split('#')[0].toLowerCase();
+    return /\.(mp4|webm|mov|m4v|ogv)$/.test(u) ? 'video' : 'image';
+  }
+
+  function makeMedia(url) {
+    if (mediaKind(url) !== 'video') {
+      var img = document.createElement('img');
+      img.alt = '';
+      return img;
+    }
+    var v = document.createElement('video');
+    /* muted is what makes autoplay legal in the Chromium OBS embeds, and a
+       logo has no business making noise. Set it both ways: the property for
+       this element, the attribute so it survives being re-parented. */
+    v.muted = true;
+    v.defaultMuted = true;
+    v.setAttribute('muted', '');
+    v.loop = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.preload = 'auto';
+    return v;
+  }
+
+  /* a <video> that is merely detached keeps decoding, so tear it down properly */
+  function stopMedia(node) {
+    if (!node) return;
+    if (node.tagName === 'VIDEO') {
+      try { node.pause(); node.removeAttribute('src'); node.load(); } catch (err) { /* ignore */ }
+    }
+    if (node.parentNode) node.parentNode.removeChild(node);
+  }
+
+  function playIfVideo(node) {
+    if (!node || node.tagName !== 'VIDEO') return;
+    var p = node.play();
+    /* older Chromium returns undefined; a rejected promise only means the
+       frame sits on its first frame, which is survivable — never throw */
+    if (p && p.catch) p.catch(function () {});
+  }
+
+  /* Swap the media NODE, not just its src: a <video> cannot be cross-faded by
+     cloning (cloneNode gives an element with no playback state), and going
+     from a still to a video changes the tag entirely. */
+  function swapMedia(e, n, url, animate, style, ms) {
+    var old = n.img;
+    var next = makeMedia(url);
+    next.style.objectFit = (e.image && e.image.fit) || 'contain';
+    /* Scale is stamped on the node, not the shared box. A rotation swap can
+       happen minutes after the commit that set the size, so reading it off the
+       box would drag the outgoing logo to whatever the size is NOW; this way
+       the outgoing node simply keeps the value it was built with. */
+    next.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
+    if (url) next.src = url;
+
+    /* both branches must clear a swap in flight: a cut landing mid-cross-fade
+       would otherwise leave the previous copy on screen until its timer fired */
+    if (n.swapTimer) { clearTimeout(n.swapTimer); n.swapTimer = null; }
+    var stale = n.box.querySelectorAll('.img-exit');
+    for (var si = 0; si < stale.length; si++) stopMedia(stale[si]);
+
+    if (!animate || !old || !old.getAttribute('src')) {
+      if (old) stopMedia(old);
+      n.box.appendChild(next);
+      n.img = next;
+      playIfVideo(next);
+      return;
+    }
+
+    n.box.style.setProperty('--swap-ms', ms + 'ms');
+    old.className = 'img-exit sw-' + style;
+    n.box.appendChild(next);
+    void next.offsetWidth;
+    next.className = 'img-enter sw-' + style;
+    n.img = next;
+    playIfVideo(next);
+    n.swapTimer = setTimeout(function () {
+      n.swapTimer = null;
+      stopMedia(old);
+      next.className = '';
+    }, ms + 120);
+  }
+
+  /* --------------------------------------------------- logo rotation
+     image.url is the MAIN logo; image.sources are the alternates. Rotation is
+     purely a render-time behaviour and never writes back into the look, so the
+     dock's dirty flag does not flap every few seconds. */
+
+  function rotationSig(e) {
+    var im = e.image || {}, r = im.rotate || {};
+    var srcs = (im.sources || []).map(function (x) { return (x && x.url) || ''; }).join('\u0001');
+    return [im.url || '', srcs, r.mode, r.everyMs, r.showMs, r.anim, r.animMs].join('|');
+  }
+
+  function stopRotation(n) {
+    if (!n) return;
+    if (n.rotTimer) { clearTimeout(n.rotTimer); n.rotTimer = null; }
+  }
+
+  /* buildGrid throws the whole registry away, so a REPEATING timer would
+     otherwise outlive its element forever — unlike the one-shot swap timers,
+     which fire once against a detached node and die. */
+  function stopAllRotations() {
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (!n) return;
+      stopRotation(n);
+      /* finish, don't just cancel: a hide landing mid-swap would otherwise
+         leave the outgoing copy on screen (still decoding, if it is a video)
+         and it would still be there on the way back in */
+      if (n.swapTimer) { clearTimeout(n.swapTimer); n.swapTimer = null; }
+      if (n.box) {
+        var ex = n.box.querySelectorAll('.img-exit');
+        for (var i = 0; i < ex.length; i++) stopMedia(ex[i]);
+      }
+      if (n.img) {
+        n.img.className = '';
+        if (n.img.tagName === 'VIDEO') { try { n.img.pause(); } catch (err) { /* ignore */ } }
+      }
+    });
+  }
+
+  /* The counterpart to the pause above. A commit does not rebuild the media
+     node when the URL has not changed, so without this a video logo comes back
+     from a hide frozen on the frame it was paused at. */
+  function resumeAllMedia() {
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (n && n.img) playIfVideo(n.img);
+    });
+  }
+
+  function rotateTo(e, n, url, r) {
+    if (n.mediaUrl === url) return;
+    n.mediaUrl = url;
+    /* "animations off" means an instant cut, not a stopped rotation — the
+       same meaning that flag has everywhere else in the product */
+    var style = (r && r.anim) || 'fade';
+    var ms = Math.max(0, (r && r.animMs !== undefined) ? r.animMs : (anim ? anim.changeMs : 450));
+    var animate = !!(anim && anim.enabled !== false) && style !== 'none' && ms > 0;
+    swapMedia(e, n, url, animate, style, ms);
+  }
+
+  /* the element as the last commit left it, by id */
+  function currentEl(id) {
+    if (!current || !current.elements) return null;
+    for (var i = 0; i < current.elements.length; i++) {
+      if (current.elements[i].id === id) return current.elements[i];
+    }
+    return null;
+  }
+
+  function syncRotation(e) {
+    var n = nodes[e.id];
+    if (!n || !n.img) return;
+    var sig = rotationSig(e);
+    if (n.rotSig === sig && n.rotTimer) return;   // already running this exact config
+    stopRotation(n);
+    n.rotSig = sig;
+
+    var im = e.image || {}, r = im.rotate || {};
+    var main = im.url || '';
+    var alts = (im.sources || []).map(function (x) { return (x && x.url) || ''; })
+      .filter(function (u) { return !!u; });
+    if ((r.mode !== 'cycle' && r.mode !== 'return') || !alts.length) return;
+    if (ROLE === 'program' && !isShown) return;   // nothing on air to rotate
+
+    var every = Math.max(500, r.everyMs || 8000);
+    var show = Math.max(200, r.showMs || 6000);
+    var list = [main].concat(alts);
+    var i = 0;            // cycle: index into list.  return: index into alts.
+    var onAlt = false;
+
+    function tick() {
+      /* re-read the element every tick: rotationSig covers the sources and the
+         timing, but a commit that changes only scale or fit must still reach
+         the next swap rather than being frozen into this closure */
+      var cur = currentEl(e.id) || e;
+      if (r.mode === 'cycle') {
+        i = (i + 1) % list.length;
+        rotateTo(cur, n, list[i], r);
+        n.rotTimer = setTimeout(tick, every);
+      } else if (onAlt) {
+        onAlt = false;
+        rotateTo(cur, n, main, r);
+        n.rotTimer = setTimeout(tick, every);
+      } else {
+        onAlt = true;
+        rotateTo(cur, n, alts[i % alts.length], r);
+        i++;
+        n.rotTimer = setTimeout(tick, show);
+      }
+    }
+    n.rotTimer = setTimeout(tick, every);
+  }
+
+  function syncAllRotations() {
+    if (!current || !current.elements) return;
+    current.elements.forEach(function (e) {
+      if (e.kind === 'image' && e.enabled !== false) syncRotation(e);
+    });
+  }
+
   function buildGrid(look) {
     var L = layoutOf(look);
+    stopAllRotations();
     nodes = {};
     lt.innerHTML = '';
     grid = document.createElement('div');
@@ -308,8 +520,7 @@
         box.style.setProperty('--i', i.toFixed(2));
 
         if (e.kind === 'image') {
-          var img = document.createElement('img');
-          img.alt = '';
+          var img = makeMedia((e.image && e.image.url) || '');
           box.appendChild(img);
           nodes[e.id] = { cell: cell, box: box, img: img };
         } else {
@@ -391,11 +602,10 @@
       if (e.place.stretch) cell.dataset.stretch = '1';
     } else {
       box.style.minHeight = Math.round((st.size || 56) * 1.18 + (st.padY || 0) * 2) + 'px';
-      /* remember what the picture is showing NOW, so a swap in the same commit
-         can hold the outgoing copy at those values while it fades */
-      n.prevScale = box.style.getPropertyValue('--img-scale') || undefined;
-      n.prevFit = n.img.style.objectFit || undefined;
+      /* scale and fit live on the media node itself — see swapMedia, which
+         relies on an outgoing node keeping the values it was built with */
       box.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
+      n.img.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
       n.img.style.objectFit = (e.image && e.image.fit) || 'contain';
     }
   }
@@ -515,35 +725,16 @@
     }
   }
 
+  /* A commit puts the MAIN logo back on screen; rotation (if any) takes over
+     from there and is restarted by syncRotation, because its signature
+     includes the url that just changed. */
   function updateImage(e, animate) {
     var n = nodes[e.id];
     if (!n || !n.img) return;
     var target = (e.image && e.image.url) || '';
-    if (n.img.dataset.src === target) return;
-    n.img.dataset.src = target;
-    if (animate && n.img.src) {
-      if (n.img._swapTimer) { clearTimeout(n.img._swapTimer); n.img._swapTimer = null; }
-      var stale = n.box.querySelectorAll('.img-exit');
-      for (var si = 0; si < stale.length; si++) stale[si].remove();
-      n.img.classList.remove('img-enter');
-      var clone = n.img.cloneNode(false);
-      clone.className = 'img-exit';
-      /* hold the outgoing picture at the size/crop it was shown at, rather
-         than letting it inherit the values just written for the new one */
-      if (n.prevScale !== undefined) clone.style.setProperty('--img-scale', n.prevScale);
-      if (n.prevFit) clone.style.objectFit = n.prevFit;
-      n.box.appendChild(clone);
-      void n.img.offsetWidth;
-      n.img.classList.add('img-enter');
-      n.img.src = target;
-      n.img._swapTimer = setTimeout(function () {
-        n.img._swapTimer = null;
-        clone.remove();
-        n.img.classList.remove('img-enter');
-      }, (anim ? anim.changeMs : 450) + 120);
-    } else {
-      n.img.src = target;
-    }
+    if (n.mediaUrl === target) return;
+    n.mediaUrl = target;
+    swapMedia(e, n, target, animate, 'fade', anim ? anim.changeMs : 450);
   }
 
   function updateDom(look, animate) {
@@ -568,6 +759,9 @@
     });
 
     current = look;
+    /* restart any rotation whose sources or timing just changed, and stop the
+       ones that no longer have anywhere to rotate to */
+    syncAllRotations();
   }
 
   /* --------------------------------------------------------- transitions */
@@ -693,6 +887,7 @@
         updateDom(msg.state.live, false);
         isShown = !!msg.state.visible;
         if (isShown) showInstant(); else hideInstant();
+        if (isShown) { syncAllRotations(); resumeAllMedia(); } else stopAllRotations();
       }
       return;
     }
@@ -713,10 +908,15 @@
       if (ROLE !== 'program') return;
       if (isShown && !outInFlight) {
         applyCommit(msg.live, msg.animate);
+        resumeAllMedia();
       } else {
         if (outInFlight) { clearAnimTimer(); outInFlight = false; deferredLook = null; }
         updateDom(msg.live, false);
         isShown = true;
+        /* syncRotation refuses to run while the bar is off air, so the rotation
+           has to be (re)started now that it is on — and any paused video with it */
+        syncAllRotations();
+        resumeAllMedia();
         if (msg.animate) playIn(); else showInstant();
       }
       return;
@@ -725,6 +925,9 @@
     if (t === 'hide') {
       if (ROLE !== 'program') return;
       isShown = false;
+      /* nothing on air: stop rotating and pause any video, rather than burning
+         a timer and a decode loop against a hidden bar */
+      stopAllRotations();
       if (msg.animate) playOut(); else hideInstant();
       return;
     }

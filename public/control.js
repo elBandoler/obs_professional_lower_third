@@ -276,6 +276,22 @@
   /* image upload target ------------------------------------------------ */
 
   var pendingImageSetter = null;
+  /* Uploads used to fail in total silence. The footer is the only line
+     visible in both views, so a failure lands there and then fades back. */
+  var noteTimer = null;
+  function uploadNote(msg) {
+    var f = $('#foot-note');
+    if (!f) return;
+    f.textContent = msg;
+    f.classList.add('warn');
+    if (noteTimer) clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () {
+      noteTimer = null;
+      f.classList.remove('warn');
+      f.textContent = 'obs-lower-thirds · edit here, watch the preview, press SHOW';
+    }, 6000);
+  }
+
   function pickImage(setter) {
     pendingImageSetter = setter;
     $('#logo-file').click();
@@ -474,6 +490,132 @@
   }
 
   /* ---------------------------------------------------------- snippets */
+
+  /* ------------------------------------------------ extra logos (rotation)
+     image.url is the MAIN logo; image.sources holds the alternates. deepMerge
+     replaces arrays wholesale in both engines, so every edit sends the WHOLE
+     list — patching one entry is not possible and would silently drop the
+     others. */
+  function buildLogoSources(elem) {
+    var id = elem.id;
+    var wrap = el('div', 'logo-wrap');
+    var MAX = 12;              // matches the cap in both state engines
+    var draft = false;         // an empty slot the operator has not filled yet
+    var lastSig = null;
+
+    function sourcesOf() {
+      var e = findEl(id);
+      return ((e && e.image && e.image.sources) || []).map(function (x) {
+        return { url: (x && x.url) || '' };
+      });
+    }
+    function setSources(list) {
+      sendEl(id, 'image.sources', list.filter(function (x) { return x.url; }).slice(0, MAX));
+    }
+    /* An upload finishes long after its row was built, by which time a
+       removal or reorder may have shifted every index. Find the slot by the
+       url it held instead of trusting the position it had. */
+    function replaceUrl(was, now) {
+      var next = sourcesOf();
+      var k = -1;
+      for (var i = 0; i < next.length; i++) if (next[i].url === was) { k = i; break; }
+      if (k < 0) { setSources(next.concat([{ url: now }])); return; }
+      next[k] = { url: now };
+      setSources(next);
+    }
+
+    function row(src, i, list) {
+      var r = el('div', 'logo-row');
+      var input = el('input');
+      input.type = 'text';
+      input.value = src.url;
+      input.placeholder = 'image / video URL';
+      input.title = src.url;
+      input.addEventListener('change', function () {
+        if (src.url) replaceUrl(src.url, input.value);
+        else if (input.value) { draft = false; setSources(sourcesOf().concat([{ url: input.value }])); }
+      });
+      var up = el('button', 'mini', '\ud83d\udcc1');
+      up.title = 'Upload a picture or a short video for this slot';
+      up.addEventListener('click', function () {
+        pickImage(function (url) {
+          if (src.url) replaceUrl(src.url, url);
+          else { draft = false; setSources(sourcesOf().concat([{ url: url }])); }
+        });
+      });
+      var mv = el('button', 'mini', '\u25b2');
+      mv.title = 'Move this logo earlier in the rotation';
+      mv.disabled = i === 0 || !src.url;
+      mv.addEventListener('click', function () {
+        var next = sourcesOf();
+        if (i > 0 && i < next.length) {
+          var t = next[i - 1]; next[i - 1] = next[i]; next[i] = t;
+          setSources(next);
+        }
+      });
+      var x = el('button', 'mini', '\u2715');
+      x.title = src.url ? 'Remove this logo from the rotation' : 'Discard this empty slot';
+      x.addEventListener('click', function () {
+        if (!src.url) { draft = false; lastSig = null; render(); return; }
+        var next = sourcesOf();
+        for (var k = 0; k < next.length; k++) if (next[k].url === src.url) { next.splice(k, 1); break; }
+        setSources(next);
+      });
+      r.appendChild(input); r.appendChild(up); r.appendChild(mv); r.appendChild(x);
+      return { node: r, input: input };
+    }
+
+    function render() {
+      var e = findEl(id);
+      if (!e || e.kind !== 'image') { wrap.innerHTML = ''; lastSig = null; return; }
+      var list = sourcesOf();
+      /* rebuilding under the operator's finger swallows the click; the draft
+         flag is part of the signature so adding one always redraws */
+      var sig = list.map(function (x) { return x.url; }).join('|') + '|' + draft;
+      if (sig === lastSig && wrap.childNodes.length) return;
+      lastSig = sig;
+      wrap.innerHTML = '';
+
+      list.forEach(function (src, i) { wrap.appendChild(row(src, i, list).node); });
+
+      var full = list.length >= MAX;
+      /* the draft is an EXTRA row on top of the real ones, never a
+         replacement for them */
+      var draftInput = null;
+      if (draft && !full) {
+        var d = row({ url: '' }, list.length, list);
+        wrap.appendChild(d.node);
+        draftInput = d.input;
+      }
+
+      if (!list.length && !draft) {
+        wrap.appendChild(el('div', 'hint', 'One logo only. Add more to rotate between them.'));
+      }
+      if (full) {
+        wrap.appendChild(el('div', 'hint', 'Maximum ' + MAX + ' logos.'));
+      }
+
+      var addRow = el('div', 'logo-add');
+      var addBtn = el('button', null, '\uff0b add logo');
+      addBtn.title = 'Add another logo for this element to rotate to';
+      addBtn.disabled = full;
+      addBtn.addEventListener('click', function () {
+        pickImage(function (url) { setSources(sourcesOf().concat([{ url: url }])); });
+      });
+      var addUrl = el('button', null, '\uff0b by URL');
+      addUrl.title = 'Add an empty slot and type a URL into it';
+      addUrl.disabled = full || draft;
+      addUrl.addEventListener('click', function () { draft = true; render(); });
+      addRow.appendChild(addBtn);
+      addRow.appendChild(addUrl);
+      wrap.appendChild(addRow);
+
+      if (draftInput) draftInput.focus();
+    }
+
+    render();
+    return { node: wrap, sync: render };
+  }
 
   function buildSnippets(elem, compact) {
     var id = elem.id;
@@ -698,6 +840,44 @@
       add({ type: 'slider', label: 'Image size', min: 0.2, max: 1, step: 0.05, unit: '×',
         title: 'Size inside its box — give the element more room with padding or min width to make the picture bigger',
         get: function () { return dig(findEl(id) || {}, 'image.scale'); }, set: function (v) { sendEl(id, 'image.scale', v); } });
+
+      /* .mp4 / .webm / .mov play as muted looping video; .gif animates as-is */
+      add({ type: 'subhead', label: 'MORE LOGOS' });
+      var lg = buildLogoSources(e);
+      addNode(lg.node);
+      syncs.push(lg.sync);
+
+      var hasAlts = function () {
+        var cur = findEl(id);
+        return !!(cur && cur.image && (cur.image.sources || []).length);
+      };
+      var rotating = function () {
+        var cur = findEl(id);
+        return hasAlts() && dig(cur || {}, 'image.rotate.mode') !== 'off';
+      };
+      add({ type: 'select', label: 'Rotate logos', showIf: hasAlts,
+        options: [{ v: 'off', l: 'Off — main logo only' },
+                  { v: 'cycle', l: 'Cycle through all' },
+                  { v: 'return', l: 'Swap out, then return to main' }],
+        title: 'Cycle walks the main logo and every extra in turn. Swap-and-return keeps the main logo up and lets an alternate take over for a while.',
+        get: function () { return dig(findEl(id) || {}, 'image.rotate.mode'); },
+        set: function (v) { sendEl(id, 'image.rotate.mode', v); } });
+      add({ type: 'slider', label: 'Swap every', min: 1, max: 300, step: 1, unit: 's', showIf: rotating,
+        get: function () { return Math.round((dig(findEl(id) || {}, 'image.rotate.everyMs') || 8000) / 1000); },
+        set: function (v) { sendEl(id, 'image.rotate.everyMs', Math.round(v * 1000)); } });
+      add({ type: 'slider', label: 'Alternate stays for', min: 1, max: 120, step: 1, unit: 's',
+        title: 'How long the alternate logo is up before the main one comes back',
+        showIf: function () { return rotating() && dig(findEl(id) || {}, 'image.rotate.mode') === 'return'; },
+        get: function () { return Math.round((dig(findEl(id) || {}, 'image.rotate.showMs') || 6000) / 1000); },
+        set: function (v) { sendEl(id, 'image.rotate.showMs', Math.round(v * 1000)); } });
+      add({ type: 'select', label: 'Swap animation', showIf: rotating,
+        options: [{ v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide up' }, { v: 'flip', l: 'Flip' },
+                  { v: 'zoom', l: 'Zoom' }, { v: 'none', l: 'Cut' }],
+        get: function () { return dig(findEl(id) || {}, 'image.rotate.anim'); },
+        set: function (v) { sendEl(id, 'image.rotate.anim', v); } });
+      add({ type: 'slider', label: 'Swap duration', min: 0, max: 2000, step: 50, unit: 'ms', showIf: rotating,
+        get: function () { return dig(findEl(id) || {}, 'image.rotate.animMs'); },
+        set: function (v) { sendEl(id, 'image.rotate.animMs', v); } });
     }
 
     pane = 'place';
@@ -1629,8 +1809,12 @@
     pendingImageSetter = null;
     fetch('/api/upload?name=' + encodeURIComponent(file.name), { method: 'POST', body: file })
       .then(function (r) { return r.json(); })
-      .then(function (j) { if (j.ok && j.url) { setter(j.url); syncAll(); } })
-      .catch(function () { /* ignore */ });
+      .then(function (j) {
+        if (j.ok && j.url) { setter(j.url); syncAll(); return; }
+        /* an oversized or unwritable file used to fail in total silence */
+        uploadNote(j.error || 'Upload failed');
+      })
+      .catch(function () { uploadNote('Upload failed — is the file too large?'); });
   });
 
   $('#font-file').addEventListener('change', function () {

@@ -206,7 +206,7 @@ bool obs_module_load(void)
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 	obs_frontend_add_tools_menu_item("Lower Thirds Panel", open_control_panel, nullptr);
 
-	lt_log("loaded (v1.2.1)");
+	lt_log("loaded (v1.3.0)");
 	return true;
 }
 

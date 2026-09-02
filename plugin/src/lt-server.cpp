@@ -400,33 +400,84 @@ int LtServer::apiHandler(struct mg_connection *conn, void *cbdata)
 	}
 
 	if (act == "upload" && method == "POST") {
-		std::string body = read_body(conn, 20 * 1024 * 1024 + 1);
-		if (body.size() > 20 * 1024 * 1024) {
-			send_json(conn, 400, {{"ok", false}, {"error", "Body too large"}});
-			return 400;
-		}
+		/* keep in step with UPLOAD_MAX in server.js */
+		const size_t UPLOAD_MAX = 64 * 1024 * 1024;
 		std::string rawName = params.count("name") ? params["name"] : "upload.png";
+		/* extension of the BASENAME, matching path.extname(path.basename(..))
+		   in server.js — scanning the whole string let a directory dot decide
+		   the type, and the two engines then disagreed on the same ?name= */
+		size_t slash = rawName.find_last_of("/\\");
+		std::string base = (slash == std::string::npos) ? rawName : rawName.substr(slash + 1);
 		std::string ext = "png";
-		size_t dot = rawName.find_last_of('.');
-		if (dot != std::string::npos) {
-			ext = rawName.substr(dot + 1);
+		size_t dot = base.find_last_of('.');
+		if (dot != std::string::npos && dot + 1 < base.size()) {
+			ext = base.substr(dot + 1);
 			for (auto &c : ext)
 				c = (char)tolower((unsigned char)c);
 		}
 		bool isImg = (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" ||
 			      ext == "webp" || ext == "svg");
+		/* animated logos, rendered as <video muted loop> by the overlay.
+		   civetweb's built-in MIME table already knows these extensions, so
+		   uploadsHandler needs no matching change. Keep in step with the
+		   vidExt list in server.js. */
+		bool isVid = (ext == "mp4" || ext == "webm" || ext == "mov" || ext == "m4v");
 		bool isFont = (ext == "ttf" || ext == "otf" || ext == "woff" || ext == "woff2");
-		if (!isImg && !isFont)
+		if (!isImg && !isVid && !isFont)
 			ext = "png";
 		static std::mt19937_64 rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
 		std::ostringstream nm;
 		nm << (isFont ? "font-" : "logo-") << std::hex << (rng() & 0xffffffffULL) << "." << ext;
+		/* Stream to disk rather than buffering the whole body first: a 64 MB
+		   upload was costing ~106 MB of working set INSIDE the OBS process,
+		   and the size check only ran once it was all in memory. */
+		fs::path f;
 		try {
 			fs::create_directories(self->uploadDir);
-			fs::path f = fs::path(self->uploadDir) / nm.str();
+			f = fs::path(self->uploadDir) / nm.str();
 			std::ofstream out(f, std::ios::binary | std::ios::trunc);
-			out.write(body.data(), (std::streamsize)body.size());
+			if (!out) {
+				send_json(conn, 500, {{"ok", false}, {"error", "Cannot open upload file"}});
+				return 500;
+			}
+			char buf[65536];
+			size_t total = 0;
+			for (;;) {
+				int n = mg_read(conn, buf, sizeof(buf));
+				if (n <= 0)
+					break;
+				total += (size_t)n;
+				if (total > UPLOAD_MAX) {
+					out.close();
+					std::error_code ec;
+					fs::remove(f, ec);
+					send_json(conn, 413, {{"ok", false}, {"error", "File too large (max 64 MB)"}});
+					return 413;
+				}
+				out.write(buf, n);
+				if (!out) {
+					out.close();
+					std::error_code ec;
+					fs::remove(f, ec);
+					send_json(conn, 500, {{"ok", false}, {"error", "Write failed"}});
+					return 500;
+				}
+			}
+			out.flush();
+			/* answering 200 for a write that silently failed would leave a
+			   truncated logo behind a URL the dock happily stores */
+			if (!out) {
+				out.close();
+				std::error_code ec;
+				fs::remove(f, ec);
+				send_json(conn, 500, {{"ok", false}, {"error", "Write failed"}});
+				return 500;
+			}
+			out.close();
 		} catch (const std::exception &e) {
+			std::error_code ec;
+			if (!f.empty())
+				fs::remove(f, ec);
 			send_json(conn, 500, {{"ok", false}, {"error", e.what()}});
 			return 500;
 		}

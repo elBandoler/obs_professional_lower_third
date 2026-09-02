@@ -132,6 +132,14 @@ body.mode-simple #mode-toggle { color: var(--amber); border-color: #6a5426; }
   color: var(--dim);
 }
 
+.warn { color: var(--amber); }
+
+/* the extra-logos list on an image element */
+.logo-wrap { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px 0; }
+.logo-row { display: flex; gap: 4px; align-items: center; }
+.logo-row input { flex: 1; min-width: 0; }
+.logo-add { display: flex; gap: 6px; flex-wrap: wrap; }
+
 /* ------------------------------------------------------------ preview */
 
 #preview-wrap { padding: 0 20px 0 10px; }

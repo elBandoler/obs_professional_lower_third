@@ -27,7 +27,9 @@
       "name": "Image",
       "enabled": true,
       "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
-      "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1 },
+      "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 1,
+        "sources": [],
+        "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
       "style": {
         "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c",
         "size": 56, "weight": 600, "letterSpacing": 0,
