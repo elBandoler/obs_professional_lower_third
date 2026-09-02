@@ -461,6 +461,95 @@
       },
       "anim": { "enabled": true, "inStyle": "slide-up", "outStyle": "auto", "changeStyle": "slide-swap",
         "inMs": 700, "outMs": 500, "changeMs": 450, "staggerMs": 70, "easing": "snappy", "autoHideSec": 0 }
+    },
+    {
+      "id": "p-strap-rotating",
+      "name": "News strap + rotating logo",
+      "schema": 2,
+      "elements": [
+        {
+          "id": "el-headline", "kind": "text", "name": "Headline", "enabled": true,
+          "place": { "row": 0, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
+          "text": "כותרת ראשית לדוגמה",
+          "snippets": [],
+          "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
+          "style": {
+            "bg": "#0d0b4f", "bgOpacity": 1, "color": "#ffffff",
+            "size": 42, "weight": 800, "letterSpacing": 0,
+            "padX": 28, "padY": 10, "lineHeight": 1.15,
+            "fontFamily": "", "align": "auto", "nowrap": false, "minWidth": 0,
+            "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+              "stops": [ { "color": "#0d0b4f", "pos": 0, "opacity": 1 }, { "color": "#141152", "pos": 100, "opacity": 1 } ] },
+            "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+            "edges": { "mode": "inherit", "radius": 0, "chamfer": 0 },
+            "accent": { "mode": "top", "color": "#53c6f0", "thickness": 5 }
+          }
+        },
+        {
+          "id": "el-subtitle", "kind": "text", "name": "Subtitle", "enabled": true,
+          "place": { "row": 1, "col": 0, "order": 0, "stretch": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
+          "text": "שורת משנה: הסבר קצר מתחת לכותרת",
+          "snippets": [],
+          "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
+          "style": {
+            "bg": "#ffffff", "bgOpacity": 1, "color": "#2b3140",
+            "size": 24, "weight": 500, "letterSpacing": 0,
+            "padX": 28, "padY": 7, "lineHeight": 1.2,
+            "fontFamily": "", "align": "auto", "nowrap": false, "minWidth": 0,
+            "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+              "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#eef1f5", "pos": 100, "opacity": 1 } ] },
+            "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+            "edges": { "mode": "inherit", "radius": 0, "chamfer": 0 },
+            "accent": { "mode": "none", "color": "#53c6f0", "thickness": 5 }
+          }
+        },
+        {
+          "id": "el-chevron", "kind": "image", "name": "Chevron", "enabled": true,
+          "place": { "row": 0, "col": 1, "order": 0, "stretch": false, "spanAll": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
+          "image": { "url": "/assets/chevron-blue.svg", "fit": "contain", "scale": 0.62, "sources": [],
+            "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
+          "anim": { "inStyle": "slide-side", "inMs": 600, "delayMs": 150, "reactTo": "el-logo", "reactStyle": "flick", "reactMs": 420, "cover": true },
+          "style": {
+            "bg": "#0d0b4f", "bgOpacity": 0, "color": "#ffffff",
+            "size": 40, "weight": 700, "letterSpacing": 0,
+            "padX": 8, "padY": 10, "lineHeight": 1.2,
+            "fontFamily": "", "align": "center", "nowrap": false, "minWidth": 56,
+            "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+              "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
+            "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+            "edges": { "mode": "inherit", "radius": 0, "chamfer": 0 },
+            "accent": { "mode": "none", "color": "#53c6f0", "thickness": 5 }
+          }
+        },
+        {
+          "id": "el-logo", "kind": "image", "name": "Logo", "enabled": true,
+          "place": { "row": 0, "col": 2, "order": 0, "stretch": false, "spanAll": true, "rowSpan": 1, "colSpan": 1, "pin": "auto" },
+          "image": { "url": "/assets/logo-placeholder.svg", "fit": "contain", "scale": 0.82, "sources": [],
+            "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
+          "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
+          "style": {
+            "bg": "#ffffff", "bgOpacity": 1, "color": "#0d0b4f",
+            "size": 40, "weight": 700, "letterSpacing": 0,
+            "padX": 14, "padY": 12, "lineHeight": 1.2,
+            "fontFamily": "", "align": "center", "nowrap": false, "minWidth": 150,
+            "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
+              "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
+            "bgImage": { "enabled": false, "url": "", "fit": "cover" },
+            "edges": { "mode": "inherit", "radius": 0, "chamfer": 0 },
+            "accent": { "mode": "none", "color": "#53c6f0", "thickness": 5 }
+          }
+        }
+      ],
+      "style": {
+        "direction": "auto", "textAlign": "start",
+        "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70, "sideMargin": 0, "bottomMargin": 64 },
+        "gap": 0,
+        "font": { "family": "'Segoe UI', 'Heebo', 'Noto Sans Hebrew', Arial, sans-serif", "customCssUrl": "", "uploads": [] },
+        "edges": { "style": "square", "radius": 0, "chamfer": 0 },
+        "shadow": 34
+      },
+      "anim": { "enabled": true, "inStyle": "slide-up", "outStyle": "auto", "changeStyle": "slide-swap",
+        "inMs": 700, "outMs": 500, "changeMs": 450, "staggerMs": 80, "easing": "snappy", "autoHideSec": 0 }
     }
   ]
 }

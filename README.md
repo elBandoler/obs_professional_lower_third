@@ -208,10 +208,19 @@ Advanced sections:
   Any element can override the global edge style with its own.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
+- **Bundled artwork** — `public/assets/` ships `chevron-blue.svg` and
+  `chevron-purple.svg`: a plain two-tone chevron pointing in the RTL reading
+  direction. They are ordinary SVGs, so they stay crisp at any size and you can
+  recolour them by editing the two `fill` values. Drop in your own artwork
+  whenever you like — nothing in the code knows what a chevron is.
 - **Presets** and **Quick** (the last two sections, deliberately — loading one throws away
-  everything in the preview, so neither sits where a hand lands first) — five built in,
-  including **Headline + subtitle** (a big headline with a smaller line under it) — plus
-  save/load/overwrite/delete of your own complete looks (all elements + style + animation).
+  everything in the preview, so neither sits where a hand lands first) — six built in,
+  including **Headline + subtitle** (a big headline with a smaller line under it) and
+  **News strap + rotating logo** (a two-tier navy strap with a full-height logo, and a
+  chevron between the logo and the text already wired to react when the logo rotates — add
+  your logos under MORE LOGOS, set *Rotate logos*, and the chevron carries every change) —
+  plus save/load/overwrite/delete of your own complete looks (all elements + style +
+  animation).
   *Quick* is the same list as big one-tap buttons. Loading a preset only changes the
   *preview*; SHOW puts it on air. Both are ADVANCED-only.
 

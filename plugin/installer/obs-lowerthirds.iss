@@ -3,7 +3,7 @@
 ; actually scans for plugins) and registers the control-panel dock.
 
 #define MyAppName "OBS Lower Thirds"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.1"
 
 [Setup]
 AppId={{7E1FA9D2-52B4-4A0C-9D8E-2C6A31B0F5D7}
