@@ -212,6 +212,8 @@ Advanced sections:
     of segments set to `gap: 0` chains into one arrow ribbon. It is a clip on the element, not
     artwork — so each segment's colour is just its own background and every one of them
     recolours independently. *Chevron depth* controls how far the point reaches.
+    The point follows the **reading direction** — right on an LTR layout, left on RTL — so
+    the ribbon reads as an arrow travelling with the sentence rather than against it.
   - One caveat: the **wipe** entrance animates the same clip the shape uses, so an element
     with slanted or chevron edges shows as a plain rectangle for the length of a wipe and
     snaps to its shape at the end. Give clipped elements a different entrance — slide, fade
