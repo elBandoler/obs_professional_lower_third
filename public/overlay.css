@@ -115,11 +115,48 @@ body.bg-green { background: #00b140; }
 
 /* ------------------------------------------------------------- edges */
 
+/* A chevron end-cap: the element points the way the text reads and is notched
+   on the other end, so a row of segments chains into one ribbon. There is no
+   artwork involved — the shape is a clip on the element, so its colour is the
+   element's own background and every segment recolours independently. */
+.box[data-edges="chevron"] {
+  clip-path: polygon(
+    var(--chamfer, 26px) 0,
+    100% 0,
+    calc(100% - var(--chamfer, 26px)) 50%,
+    100% 100%,
+    var(--chamfer, 26px) 100%,
+    0 50%
+  );
+  /* The point and the notch both sit INSIDE the element's own box, so two
+     abutting boxes leave a chamfer-wide hole at the seam no matter how the
+     polygon is drawn — they only mesh if each segment is pulled back over its
+     neighbour by exactly that much. The pull is applied to the CELL by
+     applyElementStyle, not here: a box that fills its cell would simply re-grow
+     and swallow a margin of its own.
+
+     The V is cut at 50% of each element's OWN height, so segments of different
+     heights meet at different points and the seam opens out in the middle.
+     Filling the row is what keeps every apex on one line. */
+  align-self: stretch;
+}
+#stage[data-dir="rtl"] .box[data-edges="chevron"] {
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--chamfer, 26px)) 0,
+    100% 50%,
+    calc(100% - var(--chamfer, 26px)) 100%,
+    0 100%,
+    var(--chamfer, 26px) 50%
+  );
+}
+
+
 .box[data-edges="rounded"] { border-radius: var(--radius, 14px); }
 .box[data-edges="chamfer"] {
   clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
-  padding-left: calc(var(--chamfer, 26px) * 0.9) !important;
-  padding-right: calc(var(--chamfer, 26px) * 0.9) !important;
+  /* the inset that keeps text clear of the slant is added to the operator's
+     own padding in applyElementStyle, not forced over it from here */
 }
 #stage[data-dir="rtl"] .box[data-edges="chamfer"] {
   clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 100%, var(--chamfer, 26px) 100%);
@@ -238,6 +275,80 @@ body.bg-green { background: #00b140; }
 @keyframes kf-logo-zoom-in {
   from { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--img-scale, 1) * 0.65)); }
   to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+}
+
+/* The heavier swaps. These are the ones worth reaching for on a station ident:
+   the two pictures move as one piece rather than dissolving into each other. */
+.img-exit.sw-push   { animation-name: kf-logo-push-out; }
+.img-enter.sw-push  { animation-name: kf-logo-push-in; }
+.img-exit.sw-wipe   { animation-name: kf-logo-wipe-out; }
+.img-enter.sw-wipe  { animation-name: kf-logo-wipe-in; }
+.img-exit.sw-cube   { animation-name: kf-logo-cube-out; }
+.img-enter.sw-cube  { animation-name: kf-logo-cube-in; }
+.img-exit.sw-iris   { animation-name: kf-logo-iris-out; }
+.img-enter.sw-iris  { animation-name: kf-logo-iris-in; }
+/* push and wipe travel with the reading direction, so they mirror in RTL */
+#stage[data-dir="rtl"] .img-exit.sw-push  { animation-name: kf-logo-push-out-rtl; }
+#stage[data-dir="rtl"] .img-enter.sw-push { animation-name: kf-logo-push-in-rtl; }
+#stage[data-dir="rtl"] .img-exit.sw-wipe  { animation-name: kf-logo-wipe-out-rtl; }
+#stage[data-dir="rtl"] .img-enter.sw-wipe { animation-name: kf-logo-wipe-in-rtl; }
+
+/* push: the outgoing picture is shoved off and the incoming one takes its
+   place, both moving together — no dissolve, so it reads as one object */
+@keyframes kf-logo-push-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 1; transform: translate(calc(-50% - var(--push-dx, 300px)), -50%) scale(var(--img-scale, 1)); }
+}
+@keyframes kf-logo-push-in {
+  from { opacity: 1; transform: translate(calc(-50% + var(--push-dx, 300px)), -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+}
+@keyframes kf-logo-push-out-rtl {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 1; transform: translate(calc(-50% + var(--push-dx, 300px)), -50%) scale(var(--img-scale, 1)); }
+}
+@keyframes kf-logo-push-in-rtl {
+  from { opacity: 1; transform: translate(calc(-50% - var(--push-dx, 300px)), -50%) scale(var(--img-scale, 1)); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(var(--img-scale, 1)); }
+}
+
+/* wipe: a hard edge travels across and the picture changes behind it */
+@keyframes kf-logo-wipe-out {
+  from { clip-path: inset(0 0 0 0); }
+  to   { clip-path: inset(0 100% 0 0); }
+}
+@keyframes kf-logo-wipe-in {
+  from { clip-path: inset(0 0 0 100%); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+@keyframes kf-logo-wipe-out-rtl {
+  from { clip-path: inset(0 0 0 0); }
+  to   { clip-path: inset(0 0 0 100%); }
+}
+@keyframes kf-logo-wipe-in-rtl {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* cube: a quarter turn about the box's own edge, with the perspective set on
+   .box.img-box — the two faces read as sides of a solid, not a flip in place */
+@keyframes kf-logo-cube-out {
+  from { opacity: 1; transform: perspective(900px) translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(0deg); }
+  to   { opacity: 0; transform: perspective(900px) translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(-84deg); }
+}
+@keyframes kf-logo-cube-in {
+  from { opacity: 0; transform: perspective(900px) translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(84deg); }
+  to   { opacity: 1; transform: perspective(900px) translate(-50%, -50%) scale(var(--img-scale, 1)) rotateY(0deg); }
+}
+
+/* iris: a circle opens out of the middle */
+@keyframes kf-logo-iris-out {
+  from { opacity: 1; clip-path: circle(78% at 50% 50%); }
+  to   { opacity: 0; clip-path: circle(0% at 50% 50%); }
+}
+@keyframes kf-logo-iris-in {
+  from { opacity: 0; clip-path: circle(0% at 50% 50%); }
+  to   { opacity: 1; clip-path: circle(78% at 50% 50%); }
 }
 
 /* ------------------------------------------------------ in/out anims */

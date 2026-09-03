@@ -325,7 +325,8 @@ json LtState::normalizeElement(const json &in)
 		std::string ranim = (rot.contains("anim") && rot["anim"].is_string())
 		                            ? rot["anim"].get<std::string>()
 		                            : "fade";
-		if (ranim != "slide" && ranim != "flip" && ranim != "zoom" && ranim != "none")
+		if (ranim != "slide" && ranim != "push" && ranim != "wipe" && ranim != "flip" &&
+		    ranim != "cube" && ranim != "zoom" && ranim != "iris" && ranim != "none")
 			ranim = "fade";
 		/* nothing to rotate to means nothing rotates, whatever the mode says */
 		if (srcs.empty())

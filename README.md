@@ -163,8 +163,10 @@ Advanced sections:
     - **Swap out, then return to main** — the main logo stays up; every *Swap every* seconds
       an alternate takes over for *Alternate stays for* seconds, then the main logo comes
       back. This is the one for a sponsor or a "coming up next" ident.
-  - The change is animated — **fade, slide, flip, zoom** or a hard **cut** — with its own
-    duration. With the master **animations** switch off, rotation still runs but cuts
+  - The change is animated — **fade**, **slide up**, **push across**, **wipe across**,
+    **flip**, **cube turn**, **zoom**, **iris** or a hard **cut** — with its own duration.
+    *Push* and *wipe* travel with the reading direction; *cube* is a quarter turn in
+    perspective, which is the one that reads as a station ident rather than a dissolve. With the master **animations** switch off, rotation still runs but cuts
     instead of animating.
   - Rotation is a display behaviour: it never edits your look, so the dock does not go
     "unsaved" every few seconds, and it pauses whenever the lower third is off air.
@@ -204,8 +206,16 @@ Advanced sections:
   You can also **upload font files** (.ttf/.otf/.woff/.woff2 — stored with the overlay, usable
   immediately) or point at a font CSS URL (e.g. Google Fonts — needs internet at runtime).
   Size, weight, letter-spacing, line-height and padding are per element too.
-- **Edges & effects** — global square / rounded (radius) / slanted (amount) and shadow.
-  Any element can override the global edge style with its own.
+- **Edges & effects** — global square / rounded (radius) / slanted (amount) / **chevron** and
+  shadow. Any element can override the global edge style with its own.
+  - **Chevron** points the element the way the text reads and notches the other end, so a row
+    of segments set to `gap: 0` chains into one arrow ribbon. It is a clip on the element, not
+    artwork — so each segment's colour is just its own background and every one of them
+    recolours independently. *Chevron depth* controls how far the point reaches.
+  - One caveat: the **wipe** entrance animates the same clip the shape uses, so an element
+    with slanted or chevron edges shows as a plain rectangle for the length of a wipe and
+    snaps to its shape at the end. Give clipped elements a different entrance — slide, fade
+    or pop — which is what the built-in chevron preset does.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
 - **Bundled artwork** — `public/assets/` ships `chevron-blue.svg` and
@@ -216,9 +226,10 @@ Advanced sections:
 - **Presets** and **Quick** (the last two sections, deliberately — loading one throws away
   everything in the preview, so neither sits where a hand lands first) — six built in,
   including **Headline + subtitle** (a big headline with a smaller line under it) and
-  **News strap + rotating logo** (a two-tier navy strap with a full-height logo, and a
-  chevron between the logo and the text already wired to react when the logo rotates — add
-  your logos under MORE LOGOS, set *Rotate logos*, and the chevron carries every change) —
+  **Chevron ribbon + rotating logo** (four interlocking chevron segments — cap, headline,
+  divider, logo plate — that read as one arrow ribbon, every colour editable, with the
+  divider already wired to flick when the logo rotates and the logo set to a cube turn. Add
+  your logos under MORE LOGOS, set *Rotate logos*, and it runs) —
   plus save/load/overwrite/delete of your own complete looks (all elements + style +
   animation).
   *Quick* is the same list as big one-tap buttons. Loading a preset only changes the

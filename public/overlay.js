@@ -353,6 +353,10 @@
     }
 
     n.box.style.setProperty('--swap-ms', ms + 'ms');
+    /* push travels the plate's width plus the picture's, so the outgoing logo
+       is genuinely clear of the plate before it is cut off */
+    n.box.style.setProperty('--push-dx',
+      (n.box.clientWidth + (old.offsetWidth || 0)) + 'px');
     old.className = 'img-exit sw-' + style;
     n.box.appendChild(next);
     void next.offsetWidth;
@@ -670,7 +674,20 @@
     box.style.fontSize = st.size + 'px';
     box.style.fontWeight = st.weight;
     box.style.letterSpacing = st.letterSpacing + 'px';
-    box.style.padding = st.padY + 'px ' + st.padX + 'px';
+    /* A clipped edge eats the horizontal ends, so text has to be inset past
+       the cut or it is sliced. Add that allowance to the operator's padding
+       instead of overriding it, so their Pad horizontal still counts. */
+    var edgeMode = (st.edges && st.edges.mode !== 'inherit') ? st.edges.mode : look.style.edges.style;
+    var edgeAmt = (st.edges && st.edges.mode !== 'inherit') ? st.edges.chamfer : look.style.edges.chamfer;
+    var padInset = 0;
+    if (edgeMode === 'chevron') padInset = Math.round((edgeAmt || 0) * 1.15);
+    else if (edgeMode === 'chamfer') padInset = Math.round((edgeAmt || 0) * 0.9);
+    box.style.padding = st.padY + 'px ' + ((st.padX || 0) + padInset) + 'px';
+    /* Chevron segments have to overlap by one chamfer or the point never
+       reaches its neighbour's notch and the seam shows the key through. The
+       pull goes on the CELL: the box fills its cell, so a margin there would
+       just be absorbed by it growing again. */
+    cell.style.marginLeft = edgeMode === 'chevron' ? (-(edgeAmt || 0)) + 'px' : '';
     box.style.lineHeight = st.lineHeight || 1.2;
     box.style.minWidth = (st.minWidth || 0) + 'px';
     /* Fill the cell when this element stretches, and also when it sits in an

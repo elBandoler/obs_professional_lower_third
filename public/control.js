@@ -872,8 +872,9 @@
         get: function () { return Math.round((dig(findEl(id) || {}, 'image.rotate.showMs') || 6000) / 1000); },
         set: function (v) { sendEl(id, 'image.rotate.showMs', Math.round(v * 1000)); } });
       add({ type: 'select', label: 'Swap animation', showIf: rotating,
-        options: [{ v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide up' }, { v: 'flip', l: 'Flip' },
-                  { v: 'zoom', l: 'Zoom' }, { v: 'none', l: 'Cut' }],
+        options: [{ v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide up' }, { v: 'push', l: 'Push across' },
+                  { v: 'wipe', l: 'Wipe across' }, { v: 'flip', l: 'Flip' }, { v: 'cube', l: 'Cube turn' },
+                  { v: 'zoom', l: 'Zoom' }, { v: 'iris', l: 'Iris' }, { v: 'none', l: 'Cut' }],
         get: function () { return dig(findEl(id) || {}, 'image.rotate.anim'); },
         set: function (v) { sendEl(id, 'image.rotate.anim', v); } });
       add({ type: 'slider', label: 'Swap duration', min: 0, max: 2000, step: 50, unit: 'ms', showIf: rotating,
@@ -1023,14 +1024,15 @@
       get: function () { return dig(findEl(id) || {}, 'style.padX'); }, set: function (v) { sendEl(id, 'style.padX', v); } });
     add({ type: 'slider', label: 'Pad vertical', min: 0, max: 70, step: 1, unit: 'px',
       get: function () { return dig(findEl(id) || {}, 'style.padY'); }, set: function (v) { sendEl(id, 'style.padY', v); } });
-    add({ type: 'select', label: 'Edges', options: [{ v: 'inherit', l: 'Same as global' }, { v: 'square', l: 'Square' }, { v: 'rounded', l: 'Rounded' }, { v: 'chamfer', l: 'Slanted' }], rebuild: true,
+    add({ type: 'select', label: 'Edges', options: [{ v: 'inherit', l: 'Same as global' }, { v: 'square', l: 'Square' }, { v: 'rounded', l: 'Rounded' }, { v: 'chamfer', l: 'Slanted' }, { v: 'chevron', l: 'Chevron' }], rebuild: true,
       get: function () { return dig(findEl(id) || {}, 'style.edges.mode'); }, set: function (v) { sendEl(id, 'style.edges.mode', v); } });
     if (e.style.edges && e.style.edges.mode === 'rounded') {
       add({ type: 'slider', label: 'Corner radius', min: 0, max: 60, step: 1, unit: 'px',
         get: function () { return dig(findEl(id) || {}, 'style.edges.radius'); }, set: function (v) { sendEl(id, 'style.edges.radius', v); } });
     }
-    if (e.style.edges && e.style.edges.mode === 'chamfer') {
-      add({ type: 'slider', label: 'Slant amount', min: 4, max: 80, step: 1, unit: 'px',
+    if (e.style.edges && (e.style.edges.mode === 'chamfer' || e.style.edges.mode === 'chevron')) {
+      add({ type: 'slider', label: e.style.edges.mode === 'chevron' ? 'Chevron depth' : 'Slant amount',
+        min: 4, max: 80, step: 1, unit: 'px',
         get: function () { return dig(findEl(id) || {}, 'style.edges.chamfer'); }, set: function (v) { sendEl(id, 'style.edges.chamfer', v); } });
     }
     add({ type: 'select', label: 'Accent strip', options: [{ v: 'none', l: 'None' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }, { v: 'side', l: 'Side' }], rebuild: true,
@@ -1286,9 +1288,9 @@
     { sec: 'type', type: 'text', label: 'Default font stack', title: 'Used by every element that has no font of its own', get: g('style.font.family'), set: s('style.font.family') },
     { sec: 'type', type: 'text', label: 'Font CSS URL', placeholder: 'https://fonts.googleapis.com/css2?family=Heebo…', get: g('style.font.customCssUrl'), set: s('style.font.customCssUrl') },
 
-    { sec: 'edges', type: 'select', label: 'Edge style', options: [{ v: 'square', l: 'Square' }, { v: 'rounded', l: 'Rounded' }, { v: 'chamfer', l: 'Slanted' }], get: g('style.edges.style'), set: s('style.edges.style') },
+    { sec: 'edges', type: 'select', label: 'Edge style', options: [{ v: 'square', l: 'Square' }, { v: 'rounded', l: 'Rounded' }, { v: 'chamfer', l: 'Slanted' }, { v: 'chevron', l: 'Chevron' }], get: g('style.edges.style'), set: s('style.edges.style') },
     { sec: 'edges', type: 'slider', label: 'Corner radius', min: 0, max: 60, step: 1, unit: 'px', get: g('style.edges.radius'), set: s('style.edges.radius') },
-    { sec: 'edges', type: 'slider', label: 'Slant amount', min: 0, max: 80, step: 1, unit: 'px', get: g('style.edges.chamfer'), set: s('style.edges.chamfer') },
+    { sec: 'edges', type: 'slider', label: 'Slant / chevron depth', min: 0, max: 80, step: 1, unit: 'px', get: g('style.edges.chamfer'), set: s('style.edges.chamfer') },
     { sec: 'edges', type: 'slider', label: 'Shadow', min: 0, max: 100, step: 1, get: g('style.shadow'), set: s('style.shadow') },
 
     { sec: 'anim', type: 'toggle', label: 'Enable animations', title: 'Off = changes appear instantly, with no motion', get: g('anim.enabled'), set: s('anim.enabled') },

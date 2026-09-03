@@ -264,7 +264,7 @@ function normalizeElement(el) {
       .slice(0, 12);
     const rot = (img.rotate && typeof img.rotate === 'object') ? img.rotate : {};
     const MODES = ['off', 'cycle', 'return'];
-    const ANIMS = ['fade', 'slide', 'flip', 'zoom', 'none'];
+    const ANIMS = ['fade', 'slide', 'push', 'wipe', 'flip', 'cube', 'zoom', 'iris', 'none'];
     /* `|| default` would turn a legitimate 0 into the default — which also
        made this pass non-idempotent, and disagreed with the plugin, whose
        numOr() only falls back when the value is absent or not a number.
