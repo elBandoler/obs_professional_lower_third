@@ -220,6 +220,21 @@ Advanced sections:
     or pop — which is what the built-in chevron preset does.
 - **Animation** — master enable, in/out/text-change styles, easing, durations, stagger,
   auto-hide after N seconds.
+- **Artwork shape detection** — drop a cut-out picture (a chevron on a transparent
+  background, say) into an image element and the dock reads its alpha channel and tells you
+  what it found: how much of it is transparent, which way its point faces and how deep that
+  point is, and whether the file has transparent padding baked into it.
+  - **Notch the bars to fit** then gives every other element on that row a chevron edge at
+    exactly the measured depth, so your artwork slots into the bar instead of sitting beside
+    it — no measuring, no typing a number into *Chevron depth*.
+  - **Trim N px margin** scales the picture up to fill padding baked into the file, so it
+    stops sitting smaller than its box.
+  - It is careful about what it calls a chevron: the reach has to grow *linearly* from the
+    ends toward the middle, which is what a diagonal edge does. A rounded logo reaches its
+    full width almost immediately, so it is reported as cut-out artwork and nothing else.
+  - The reading happens in the dock, where the browser already has an image decoder. A
+    picture loaded from another server cannot be measured (the canvas is locked); upload it
+    and it can be.
 - **Bundled artwork** — `public/assets/` ships `chevron-blue.svg` and
   `chevron-purple.svg`: a plain two-tone chevron pointing in the RTL reading
   direction. They are ordinary SVGs, so they stay crisp at any size and you can

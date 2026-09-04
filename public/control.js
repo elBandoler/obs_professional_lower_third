@@ -496,6 +496,262 @@
      replaces arrays wholesale in both engines, so every edit sends the WHOLE
      list — patching one entry is not possible and would silently drop the
      others. */
+  /* ------------------------------------------------- artwork shape probe
+     Cut-out artwork (a chevron on a transparent background, say) already
+     carries the geometry the ribbon needs: how deep its point reaches and
+     which way it faces. Rather than make the operator measure that by hand and
+     type it into "Chevron depth", read it off the alpha channel.
+
+     This is done in the dock, not the engines: a browser already has a decoder
+     and neither server has an image library. Uploads and /assets are same
+     origin so the canvas is not tainted; a cross-origin URL throws on
+     getImageData and is reported as unreadable rather than guessed at.
+
+     The depth is kept as a FRACTION of the artwork's own width. The file's
+     pixel count means nothing on the stage — the picture is fitted into its
+     box and may be drawn at a third of its size or three times it — so the
+     number is converted to stage pixels only at the moment it is applied,
+     from the size the artwork is actually rendered at in the preview. */
+
+  var shapeCache = {};
+
+  function probeArtwork(url, done) {
+    if (!url) return done(null);
+    if (shapeCache[url]) return done(shapeCache[url]);
+    function finish(res) { shapeCache[url] = res; done(res); }
+    if (/\.(mp4|webm|mov|m4v|ogv)$/i.test(String(url).split('?')[0])) {
+      return finish({ kind: 'video' });
+    }
+    var img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) return finish({ kind: 'error' });
+      /* Rasterise at a size that keeps enough ROWS to read a profile from — a
+         wide, short banner scaled by its long side keeps a dozen rows and the
+         measurement falls apart. Cap the area so a huge file stays cheap. */
+      var sc = Math.min(1, Math.sqrt(160000 / (w * h)));
+      var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+      var cv = document.createElement('canvas');
+      cv.width = cw; cv.height = ch;
+      var ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, cw, ch);
+      var data;
+      try {
+        data = ctx.getImageData(0, 0, cw, ch).data;
+      } catch (err) {
+        return finish({ kind: 'opaque', unreadable: true });
+      }
+      var A = function (x, y) { return data[((y * cw) + x) * 4 + 3]; };
+
+      /* tight bounds of everything that is not fully transparent */
+      var x0 = cw, y0 = ch, x1 = -1, y1 = -1, clear = 0, total = cw * ch;
+      for (var y = 0; y < ch; y++) {
+        for (var x = 0; x < cw; x++) {
+          if (A(x, y) > 16) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          } else { clear++; }
+        }
+      }
+      if (x1 < 0) return finish({ kind: 'empty' });
+      var transparent = clear / total;
+      if (transparent < 0.02) return finish({ kind: 'opaque', w: w, h: h });
+
+      var toX = w / cw, toY = h / ch;                 /* back to source pixels, per axis */
+      var bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+      var res = {
+        kind: 'shape',
+        w: w, h: h,
+        transparent: transparent,
+        box: { x: Math.round(x0 * toX), y: Math.round(y0 * toY), w: Math.round(bw * toX), h: Math.round(bh * toY) },
+        margin: Math.round(Math.min(x0 * toX, (cw - 1 - x1) * toX, y0 * toY, (ch - 1 - y1) * toY)),
+      };
+      if (bh < 6) return finish(res);                 /* too few rows to read a profile */
+
+      /* ink extent on one row, within the bounds; -1 when the row is empty */
+      function span(y) {
+        var lo = -1, hi = -1;
+        for (var x = x0; x <= x1; x++) {
+          if (A(x, y) > 16) { if (lo < 0) lo = x; hi = x; }
+        }
+        return { lo: lo, hi: hi };
+      }
+      var rows = [];
+      for (var yy = y0; yy <= y1; yy++) rows.push(span(yy));
+      /* a gap through the artwork (a split row) is not a shape we can read */
+      for (var ri = 0; ri < rows.length; ri++) if (rows[ri].lo < 0) return finish(res);
+
+      var endHi = (rows[0].hi + rows[rows.length - 1].hi) / 2;
+      var endLo = (rows[0].lo + rows[rows.length - 1].lo) / 2;
+      /* the furthest the ink reaches on each side, and on which row */
+      var peakHi = -1, peakHiRow = 0, peakLo = 1e9, peakLoRow = 0;
+      rows.forEach(function (r, i) {
+        if (r.hi > peakHi) { peakHi = r.hi; peakHiRow = i; }
+        if (r.lo < peakLo) { peakLo = r.lo; peakLoRow = i; }
+      });
+      var pointsRightBy = peakHi - endHi;             /* >0: reaches further right mid-way */
+      var pointsLeftBy = endLo - peakLo;              /* >0: reaches further left mid-way */
+
+      /* A chevron's edge is a straight diagonal, so the reach grows LINEARLY
+         from the ends to the peak: halfway up the ramp it should be about
+         half. A rounded rectangle reaches full width almost at once and only
+         pulls back in the last few rows — without this gate an ordinary logo
+         read as a shallow chevron. Measured against the row the peak actually
+         sits on, so a blunt or off-centre point still passes. */
+      function ramp(side, peakRow) {
+        var last = rows.length - 1;
+        var nearEnd = peakRow <= last / 2 ? 0 : last;
+        var half = Math.round((nearEnd + peakRow) / 2);
+        var full = side === 'right' ? (peakHi - rows[nearEnd].hi) : (rows[nearEnd].lo - peakLo);
+        var got = side === 'right' ? (rows[half].hi - rows[nearEnd].hi) : (rows[nearEnd].lo - rows[half].lo);
+        if (full <= 0) return false;
+        var r = got / full;
+        return r > 0.25 && r < 0.75;
+      }
+
+      var minReach = Math.max(2, bw * 0.06);
+      /* a shape must be cut BACK on the far side to be a chevron: pointed on
+         both ends is an arrow or a hexagon, and notching the bars to it would
+         be wrong on one side or the other */
+      if (pointsRightBy > minReach && pointsLeftBy < minReach * 0.5 && ramp('right', peakHiRow)) {
+        res.point = 'right';
+        res.depthFrac = pointsRightBy / bw;
+        res.depthFile = Math.round(pointsRightBy * toX);
+      } else if (pointsLeftBy > minReach && pointsRightBy < minReach * 0.5 && ramp('left', peakLoRow)) {
+        res.point = 'left';
+        res.depthFrac = pointsLeftBy / bw;
+        res.depthFile = Math.round(pointsLeftBy * toX);
+      } else if (pointsRightBy > minReach && pointsLeftBy > minReach &&
+                 ramp('right', peakHiRow) && ramp('left', peakLoRow)) {
+        /* a real arrowhead or hexagon — a rounded rectangle also reaches
+           further mid-way on both sides, but not along a straight ramp */
+        res.doublePointed = true;
+      }
+      finish(res);
+    };
+    img.onerror = function () { finish({ kind: 'error' }); };
+    img.src = url;
+  }
+
+  /* How wide this element's artwork is actually drawn on the stage, read from
+     the preview — the only place the fitted size exists. Stage pixels: the
+     preview's scale() sits on the iframe element in THIS document, so rects
+     inside it are the overlay's own 1920-wide coordinates. */
+  function renderedArtworkWidth(id) {
+    try {
+      var fr = $('#preview-frame');
+      var doc = fr && fr.contentDocument;
+      var m = doc && doc.querySelector('.box[data-id="' + id + '"] img, .box[data-id="' + id + '"] video');
+      if (!m) return 0;
+      return m.getBoundingClientRect().width || 0;
+    } catch (e) { return 0; }
+  }
+
+  /* The readout under an image element, plus the actions that make the rest
+     of the row fit the artwork. */
+  function buildShapeFit(elem) {
+    var id = elem.id;
+    var wrap = el('div', 'shape-fit');
+    var lastUrl = null;
+
+    /* the bars this artwork sits between: text elements sharing its row, with
+       a full-height element counting as on every row */
+    function bars() {
+      var me = findEl(id);
+      if (!me) return [];
+      return elements().filter(function (o) {
+        if (o.id === id || o.kind !== 'text' || o.enabled === false) return false;
+        return o.place.spanAll || me.place.spanAll || o.place.row === me.place.row;
+      });
+    }
+
+    function render(info) {
+      wrap.innerHTML = '';
+      var me = findEl(id);
+      if (!me || me.kind !== 'image' || !me.image || !me.image.url) return;
+      if (!info || info.kind === 'error') { wrap.appendChild(el('div', 'hint', 'Could not read that picture.')); return; }
+      if (info.kind === 'video') return;
+      if (info.unreadable) {
+        wrap.appendChild(el('div', 'hint',
+          'Shape not readable \u2014 the picture is on another server. Upload it instead and it can be measured.'));
+        return;
+      }
+      if (info.kind === 'empty') { wrap.appendChild(el('div', 'hint', 'That picture is fully transparent.')); return; }
+      if (info.kind === 'opaque') {
+        wrap.appendChild(el('div', 'hint', 'No transparency \u2014 this picture is a solid rectangle.'));
+        return;
+      }
+
+      var pct = Math.min(99, Math.round(info.transparent * 100));
+      var line = 'Cut-out artwork \u00b7 ' + pct + '% transparent';
+      if (info.point) {
+        line += ' \u00b7 points ' + info.point + ', ' + Math.round(info.depthFrac * 100) + '% of its width deep';
+      } else if (info.doublePointed) {
+        line += ' \u00b7 pointed at both ends';
+      }
+      wrap.appendChild(el('div', 'hint', line));
+
+      var row = el('div', 'logo-add');
+      if (info.point) {
+        var b = el('button', null, 'Notch the bars to fit');
+        b.title = 'Give the text bars on this row a chevron edge exactly as deep as this artwork\u2019s point is drawn, so it slots into them instead of sitting beside them';
+        b.addEventListener('click', function () {
+          var targets = bars();
+          if (!targets.length) { uploadNote('No text bars on this row to notch.'); return; }
+          var drawnW = renderedArtworkWidth(id);
+          if (!drawnW) { uploadNote('Cannot see the artwork in the preview yet \u2014 try again in a moment.'); return; }
+          /* the point's depth as it is drawn, in the overlay's own pixels */
+          var depth = Math.round(info.depthFrac * drawnW);
+          var clamped = Math.max(4, Math.min(80, depth));
+          targets.forEach(function (o) {
+            sendEl(o.id, 'style.edges.mode', 'chevron');
+            sendEl(o.id, 'style.edges.chamfer', clamped);
+          });
+          var msg = 'Notched ' + targets.length + ' bar' + (targets.length > 1 ? 's' : '') + ' to ' + clamped + 'px.';
+          if (clamped !== depth) msg += ' (Artwork point is ' + depth + 'px; the edge control stops at ' + clamped + '.)';
+          uploadNote(msg);
+          scheduleRebuild();
+        });
+        row.appendChild(b);
+      }
+      if (info.margin > 1) {
+        var t = el('button', null, 'Trim ' + info.margin + 'px margin');
+        t.title = 'This picture has transparent padding baked into the file, which makes it sit smaller than its box. Scale it up to compensate.';
+        t.addEventListener('click', function () {
+          var cur = findEl(id);
+          var scale = dig(cur || {}, 'image.scale') || 1;
+          /* An ABSOLUTE target, not a multiplier on whatever the scale is now:
+             a contain-fitted picture fills its box at 1x, so the scale that
+             cancels the baked-in margin is simply the file-to-ink ratio. That
+             makes the action idempotent — pressing it twice does not compound. */
+          var grow = Math.max(info.w / Math.max(1, info.box.w), info.h / Math.max(1, info.box.h));
+          var next = Math.min(3, +grow.toFixed(2));
+          if (Math.abs(next - scale) < 0.005) { uploadNote('Already filling its box.'); return; }
+          sendEl(id, 'image.scale', next);
+          uploadNote('Scaled ' + scale + '\u00d7 \u2192 ' + next + '\u00d7 to fill the transparent margin.');
+        });
+        row.appendChild(t);
+      }
+      if (row.childNodes.length) wrap.appendChild(row);
+    }
+
+    function sync() {
+      var me = findEl(id);
+      var url = (me && me.image && me.image.url) || '';
+      if (url === lastUrl) return;
+      lastUrl = url;
+      wrap.innerHTML = '';
+      if (!url) return;
+      probeArtwork(url, function (info) {
+        if (lastUrl === url) render(info);
+      });
+    }
+    sync();
+    return { node: wrap, sync: sync };
+  }
+
   function buildLogoSources(elem) {
     var id = elem.id;
     var wrap = el('div', 'logo-wrap');
@@ -838,9 +1094,13 @@
         set: function (v) { sendEl(id, 'image.url', v); } });
       add({ type: 'select', label: 'Image fit', options: [{ v: 'contain', l: 'Contain' }, { v: 'cover', l: 'Cover' }, { v: 'fill', l: 'Stretch' }],
         get: function () { return dig(findEl(id) || {}, 'image.fit'); }, set: function (v) { sendEl(id, 'image.fit', v); } });
-      add({ type: 'slider', label: 'Image size', min: 0.2, max: 1, step: 0.05, unit: '×',
+      add({ type: 'slider', label: 'Image size', min: 0.2, max: 3, step: 0.05, unit: '×',
         title: 'Size inside its box — give the element more room with padding or min width to make the picture bigger',
         get: function () { return dig(findEl(id) || {}, 'image.scale'); }, set: function (v) { sendEl(id, 'image.scale', v); } });
+
+      var sf = buildShapeFit(e);
+      addNode(sf.node);
+      syncs.push(sf.sync);
 
       /* .mp4 / .webm / .mov play as muted looping video; .gif animates as-is */
       add({ type: 'subhead', label: 'MORE LOGOS' });
