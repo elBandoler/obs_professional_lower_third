@@ -35,6 +35,7 @@ included as alternatives that serve exactly the same pages.
    build it yourself with `plugin\build.ps1` + Inno Setup if you got this repo without dist).
 2. Restart OBS. The plugin runs the graphics server *inside* OBS:
    - control panel dock: *View → Docks → Lower Thirds* (also *Tools → Lower Thirds Panel*)
+   - the redesigned **Studio** dock: *View → Docks → Lower Thirds Studio* (also *Tools → Lower Thirds Studio*) — see *Two docks* below
    - add a **"Lower Third"** source to your scenes (no URL copying needed)
    - OBS's **Transition** button commits pending changes natively — no obs-websocket setup
 3. Uninstall via Windows "Installed apps" like any program.
@@ -56,6 +57,7 @@ You'll see the URLs it serves:
 | Page | URL | Use |
 |---|---|---|
 | Control panel | `http://127.0.0.1:3620/control` | OBS custom browser dock |
+| Studio panel (redesigned) | `http://127.0.0.1:3620/studio` | OBS custom browser dock |
 | Program overlay | `http://127.0.0.1:3620/overlay` | Browser source in your scenes |
 | Preview mirror | `http://127.0.0.1:3620/overlay?role=preview` | Open in a **normal browser window** only — never as an OBS source |
 
@@ -112,6 +114,47 @@ cannot be transitioned to program by accident.
 
 Do **not** add `?role=preview` as a source in an OBS scene. Any scene can be transitioned to
 program, and that source always shows your unfinished edits — it is a trap, not a preview.
+
+### Two docks: Classic and Studio
+
+From v1.7.0 the plugin ships two control panels over the same server, state and
+protocol. Both are registered as OBS docks by the installer, and both are in the
+Tools menu.
+
+| | **Classic** — `/control` | **Studio** — `/studio` |
+|---|---|---|
+| What it is | The dock as it has always been: Simple/Advanced modes, element cards with tabs | A redesigned deck for running a show |
+| Best for | Building looks, deep per-element editing | Live operation: cue the next line, put it on air, know what is on air |
+| Changes | Unchanged in this release | New |
+
+**How Studio works**
+
+- The top of the dock is a **deck that never scrolls**: the NEXT preview
+  (cropped to the strap so a 320px dock shows it large), a two-line readout —
+  *what is on air now* and *what SHOW/UPDATE will change* — and the transport.
+- The one big button is **SHOW** when nothing is on air, **UPDATE** when NEXT
+  differs from AIR, and an inert **ON AIR ✓** when they match. There is no
+  separate TAKE. **HIDE** counts down when auto-hide is set.
+- Two places instead of two modes: **AIR** is the cue sheet — one card per
+  element with only the text and an eye — and **DESIGN** holds the element
+  inspector (one continuous form with a jump bar), the layout map (drag chips
+  between rows), the look, and presets. Tap a bar in the preview, a card, or a
+  chip: it is the same selection everywhere.
+- **Saved lines** sit under each text card as numbered rows: the cued line has
+  a green outline, the on-air line a red dot. `▸` cues the next saved line;
+  typing filters them; long-press or `⋯` renames or deletes.
+- Anything destructive is **two taps**: "discard edits" on the readout, delete,
+  overwrite. Loading a preset is **arm, then LOAD** — the arm quotes how many
+  unsent edits it will discard — and comes with a 15-second **Undo**.
+- **Keyboard**: `Ctrl+Enter` shows/updates from anywhere. Plain `Enter` in a
+  text field does nothing unless "Enter arms SHOW" is on under LOOK › DOCK (then
+  it arms the button and a second `Enter` fires it). `Alt+↑/↓` walk the
+  elements; `Esc` cancels an arm or clears the selection.
+- At **900px or wider** the dock becomes two columns — AIR on the left, DESIGN
+  on the right — with a draggable splitter.
+
+Nothing in Studio is private: an edit in one dock appears in the other, and
+the overlay does not care which dock sent it.
 
 ## 4. Options overview
 

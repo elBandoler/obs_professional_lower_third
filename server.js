@@ -1406,6 +1406,8 @@ function handleHttp(req, res) {
   }
   if (p === '/overlay') return serveFile(res, path.join(PUBLIC_DIR, 'overlay.html'), req);
   if (p === '/control') return serveFile(res, path.join(PUBLIC_DIR, 'control.html'), req);
+  /* the redesigned dock ships beside the classic one; same protocol, different UI */
+  if (p === '/studio') return serveFile(res, path.join(PUBLIC_DIR, 'studio.html'), req);
 
   if (p.startsWith('/uploads/')) {
     const abs = safeJoin(UPLOAD_DIR, p.slice('/uploads/'.length));
@@ -1474,6 +1476,8 @@ server.listen(PORT, HOST, () => {
   console.log('');
   console.log('  Control panel (OBS custom browser dock):');
   console.log('      http://' + HOST + ':' + PORT + '/control');
+  console.log('  Studio (redesigned control panel):');
+  console.log('      http://' + HOST + ':' + PORT + '/studio');
   console.log('');
   console.log('  Overlay (OBS browser source, 1920x1080):');
   console.log('      http://' + HOST + ':' + PORT + '/overlay');

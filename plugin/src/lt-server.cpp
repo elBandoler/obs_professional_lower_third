@@ -159,6 +159,7 @@ bool LtServer::start(int port, const std::string &root, const std::string &uploa
 	mg_set_request_handler(ctx, "/api/", apiHandler, this);
 	mg_set_request_handler(ctx, "/overlay$", overlayHandler, this);
 	mg_set_request_handler(ctx, "/control$", controlHandler, this);
+	mg_set_request_handler(ctx, "/studio$", studioHandler, this);
 	mg_set_request_handler(ctx, "/$", rootHandler, this);
 	mg_set_request_handler(ctx, "/uploads/", uploadsHandler, this);
 	mg_set_websocket_handler(ctx, "/ws$", wsConnect, wsReady, wsData, wsClose, this);
@@ -285,6 +286,16 @@ int LtServer::controlHandler(struct mg_connection *conn, void *cbdata)
 {
 	auto *self = (LtServer *)cbdata;
 	fs::path f = fs::path(self->webRoot) / "control.html";
+	mg_send_mime_file(conn, f.string().c_str(), "text/html; charset=utf-8");
+	return 200;
+}
+
+/* the redesigned dock ships beside the classic one: same server, same
+   protocol, different UI */
+int LtServer::studioHandler(struct mg_connection *conn, void *cbdata)
+{
+	auto *self = (LtServer *)cbdata;
+	fs::path f = fs::path(self->webRoot) / "studio.html";
 	mg_send_mime_file(conn, f.string().c_str(), "text/html; charset=utf-8");
 	return 200;
 }
