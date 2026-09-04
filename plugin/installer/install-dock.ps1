@@ -10,9 +10,6 @@ param(
 $ErrorActionPreference = "Stop"
 $title = "Lower Thirds"
 $url = "http://127.0.0.1:$Port/control"
-# the redesigned dock, registered alongside the classic one
-$title2 = "Lower Thirds Studio"
-$url2 = "http://127.0.0.1:$Port/studio"
 
 try {
     if (Get-Process obs64 -ErrorAction SilentlyContinue) {
@@ -52,16 +49,14 @@ try {
     }
 
     if ($Remove) {
-        $docks = @($docks | Where-Object { $_.url -ne $url -and $_.title -ne $title -and $_.url -ne $url2 -and $_.title -ne $title2 })
+        $docks = @($docks | Where-Object { $_.url -ne $url -and $_.title -ne $title })
     } else {
-        foreach ($d in @(@{ title = $title; url = $url }, @{ title = $title2; url = $url2 })) {
-            $exists = $docks | Where-Object { $_.url -eq $d.url }
-            if (-not $exists) {
-                $docks = @($docks) + [pscustomobject]@{
-                    title = $d.title
-                    url   = $d.url
-                    uuid  = [guid]::NewGuid().ToString()
-                }
+        $exists = $docks | Where-Object { $_.url -eq $url }
+        if (-not $exists) {
+            $docks = @($docks) + [pscustomobject]@{
+                title = $title
+                url   = $url
+                uuid  = [guid]::NewGuid().ToString()
             }
         }
     }

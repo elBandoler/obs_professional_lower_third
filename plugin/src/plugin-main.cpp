@@ -139,21 +139,12 @@ static void open_control_panel(void *)
 #endif
 }
 
-static void open_studio_panel(void *)
-{
-	char url[128];
-	snprintf(url, sizeof(url), "http://127.0.0.1:%d/studio", g_port);
-#ifdef _WIN32
-	ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
-#endif
-}
-
 /* ------------------------------------------------------------- load */
 
 static bool try_start_server(void)
 {
 	if (g_server.start(g_port, g_webRoot, g_uploadDir, &g_state)) {
-		lt_log("server listening on http://127.0.0.1:%d (control: /control, studio: /studio, overlay: /overlay)", g_port);
+		lt_log("server listening on http://127.0.0.1:%d (control: /control, overlay: /overlay)", g_port);
 		return true;
 	}
 	return false;
@@ -214,9 +205,8 @@ bool obs_module_load(void)
 	lt_register_source();
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 	obs_frontend_add_tools_menu_item("Lower Thirds Panel", open_control_panel, nullptr);
-	obs_frontend_add_tools_menu_item("Lower Thirds Studio", open_studio_panel, nullptr);
 
-	lt_log("loaded (v1.7.0)");
+	lt_log("loaded (v1.6.0)");
 	return true;
 }
 

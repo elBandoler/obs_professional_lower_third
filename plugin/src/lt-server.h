@@ -30,7 +30,6 @@ private:
 	static int apiHandler(struct mg_connection *conn, void *cbdata);
 	static int overlayHandler(struct mg_connection *conn, void *cbdata);
 	static int controlHandler(struct mg_connection *conn, void *cbdata);
-	static int studioHandler(struct mg_connection *conn, void *cbdata);
 	static int rootHandler(struct mg_connection *conn, void *cbdata);
 	static int uploadsHandler(struct mg_connection *conn, void *cbdata);
 
