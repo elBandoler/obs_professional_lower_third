@@ -767,19 +767,40 @@
        instead of overriding it, so their Pad horizontal still counts. */
     var edgeMode = (st.edges && st.edges.mode !== 'inherit') ? st.edges.mode : look.style.edges.style;
     var edgeAmt = (st.edges && st.edges.mode !== 'inherit') ? st.edges.chamfer : look.style.edges.chamfer;
+    /* which ends are cut: both, or only the start (notch / leading slant) or
+       only the end (point / trailing slant). Per element only. */
+    var edgeEnds = (st.edges && st.edges.mode !== 'inherit' && (st.edges.ends === 'start' || st.edges.ends === 'end')) ? st.edges.ends : 'both';
+    var cutStart = edgeEnds !== 'end', cutEnd = edgeEnds !== 'start';
     var padInset = 0;
     if (edgeMode === 'chevron') padInset = Math.round((edgeAmt || 0) * 1.15);
     else if (edgeMode === 'chamfer') padInset = Math.round((edgeAmt || 0) * 0.9);
-    box.style.padding = st.padY + 'px ' + ((st.padX || 0) + padInset) + 'px';
+    /* a text element with no text (a chevron band) has nothing to keep clear
+       of the cut, so it is exactly its min width */
+    if (e.kind === 'text' && !String(e.text || '').trim()) padInset = 0;
+    var rtlRibbon = resolveDir(look) === 'rtl';
+    var gapPx = (look.style && look.style.gap) || 0;
+    /* the inset only on the sides that are actually cut; a flat side keeps
+       the operator's own padding (CSS order: top right bottom left) */
+    var insetStart = cutStart ? padInset : 0, insetEnd = cutEnd ? padInset : 0;
+    /* a chevron accent band occupies thickness + depth at its edge; keep the
+       text past it (past whichever of the cut inset and the band is bigger) */
+    var acMode = (st.accent && st.accent.mode) || 'none';
+    if (acMode === 'chevron-start' || acMode === 'chevron-end' || acMode === 'chevron-both') {
+      var band = Math.round(((st.accent && st.accent.thickness) || 6) + (edgeAmt || 0));
+      if (acMode !== 'chevron-end') insetStart = Math.max(insetStart, band);
+      if (acMode !== 'chevron-start') insetEnd = Math.max(insetEnd, band);
+    }
+    box.style.padding = st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetStart : insetEnd)) + 'px ' +
+      st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetEnd : insetStart)) + 'px';
     /* Chevron segments have to overlap by one chamfer or the point never
        reaches its neighbour's notch and the seam shows the key through. The
        pull goes on the CELL: the box fills its cell, so a margin there would
        just be absorbed by it growing again. It pulls toward the NOTCH — the
        side the previous segment is on: left in a left-to-right ribbon, right
        in a right-to-left one. Pulling left regardless dragged an RTL chevron
-       over the bar after it and left a seam at the logo before it. */
-    var pull = edgeMode === 'chevron' ? (-(edgeAmt || 0)) + 'px' : '';
-    var rtlRibbon = resolveDir(look) === 'rtl';
+       over the bar after it and left a seam at the logo before it. A segment
+       with a flat start has no notch, so nothing to pull into. */
+    var pull = (edgeMode === 'chevron' && cutStart) ? (-((edgeAmt || 0) + gapPx)) + 'px' : '';
     cell.style.marginLeft = rtlRibbon ? '' : pull;
     cell.style.marginRight = rtlRibbon ? pull : '';
     box.style.lineHeight = st.lineHeight || 1.2;
@@ -808,6 +829,7 @@
     var radius = ed ? ed.radius : look.style.edges.radius;
     var chamfer = ed ? ed.chamfer : look.style.edges.chamfer;
     box.dataset.edges = mode;
+    box.dataset.ends = ed ? edgeEnds : 'both';
     box.style.setProperty('--radius', (radius || 0) + 'px');
     box.style.setProperty('--chamfer', (chamfer || 0) + 'px');
 
@@ -961,6 +983,72 @@
     swapMedia(e, n, target, animate, 'fade', anim ? anim.changeMs : 450);
   }
 
+  /* A full-height chevron's point is received by the ROWS beside it. Each
+     bar that touches the point is cut at the angle of the point where that
+     bar sits — the top bar slanting one way, the bottom bar the other, a bar
+     that straddles the middle getting the notch — pulled under the point by
+     one depth, and layered above the chevron so the point shows through the
+     cut. Only the touching end is cut; the bar's own background stays.
+     Measured after layout, because the angle depends on where each bar sits
+     within the chevron's height. Opt-in per chevron (edges.fitNeighbours). */
+  function fitToChevrons(look) {
+    if (!grid) return;
+    var rtl = stage.dataset.dir === 'rtl';
+    var gap = (look.style && look.style.gap) || 0;
+    var els = visibleElements(look);
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (n && n._fit) {
+        n._fit = false;
+        n.box.style.clipPath = '';
+        n.cell.style.zIndex = '';
+      }
+    });
+    els.forEach(function (f) {
+      if (!f.place.spanAll) return;
+      var fst = f.style || {};
+      var ed = fst.edges && fst.edges.mode !== 'inherit' ? fst.edges : null;
+      if (!ed || ed.mode !== 'chevron' || !ed.fitNeighbours || ed.ends === 'start') return;
+      var nf = nodes[f.id];
+      var c = ed.chamfer || 0;
+      if (!nf || !c) return;
+      var rf = nf.box.getBoundingClientRect();
+      if (!rf.height) return;
+      var half = rf.height / 2;
+      var pointX = rtl ? rf.left : rf.right;      /* the point is at the chevron's END */
+      nf.cell.style.zIndex = '1';
+      els.forEach(function (e) {
+        if (e === f || e.place.spanAll) return;
+        var n = nodes[e.id];
+        if (!n) return;
+        var r = n.box.getBoundingClientRect();
+        if (!r.height || r.bottom <= rf.top + 1 || r.top >= rf.bottom - 1) return;
+        var facing = rtl ? r.right : r.left;
+        var dist = rtl ? (pointX - facing) : (facing - pointX);
+        if (dist < -c - gap - 2 || dist > gap + c + 2) return;      /* not the bar touching it */
+        var yTop = Math.max(0, r.top - rf.top), yBot = Math.min(rf.height, r.bottom - rf.top);
+        function cut(y) { return c * Math.max(0, 1 - Math.abs(y - half) / half); }
+        var cTop = cut(yTop).toFixed(2), cBot = cut(yBot).toFixed(2);
+        var straddles = yTop < half && yBot > half;
+        var tip = ((rf.top + half - r.top) / r.height * 100).toFixed(3);
+        var poly;
+        if (!rtl) {
+          poly = 'polygon(' + cTop + 'px 0, 100% 0, 100% 100%, ' + cBot + 'px 100%' + (straddles ? ', ' + c + 'px ' + tip + '%' : '') + ')';
+        } else {
+          poly = 'polygon(0 0, calc(100% - ' + cTop + 'px) 0, ' + (straddles ? 'calc(100% - ' + c + 'px) ' + tip + '%, ' : '') + 'calc(100% - ' + cBot + 'px) 100%, 0 100%)';
+        }
+        n.box.style.clipPath = poly;
+        /* under the point by one depth, above the chevron, text kept clear */
+        if (rtl) n.cell.style.marginRight = (-(c + gap)) + 'px'; else n.cell.style.marginLeft = (-(c + gap)) + 'px';
+        n.cell.style.zIndex = '2';
+        var est = e.style || {};
+        var padCut = ((est.padX || 0) + c) + 'px';
+        if (rtl) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
+        n._fit = true;
+      });
+    });
+  }
+
   /* the longest per-element entrance, so playIn's window can cover an element
      whose own duration and delay outrun the look's. Recomputed per commit, not
      per grid rebuild: motion is not part of structureOf(), so a change to it
@@ -996,6 +1084,9 @@
       if (e.kind === 'text') updateText(e, animate);
       else updateImage(e, animate);
     });
+    /* geometry-dependent cuts, once now and once after fonts and wrapping settle */
+    fitToChevrons(look);
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { if (current === look) fitToChevrons(look); });
 
     current = look;
     /* restart any rotation whose sources or timing just changed, and stop the

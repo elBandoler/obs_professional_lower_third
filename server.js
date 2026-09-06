@@ -93,7 +93,7 @@ function minimalDefaults() {
       stops: [{ color: '#ffffff', pos: 0, opacity: 1 }, { color: '#e9edf5', pos: 100, opacity: 1 }],
     },
     bgImage: { enabled: false, url: '', fit: 'cover' },
-    edges: { mode: 'inherit', radius: 14, chamfer: 26 },
+    edges: { mode: 'inherit', radius: 14, chamfer: 26, ends: 'both' },
     accent: { mode: 'none', color: '#1c56d6', thickness: 6 },
   };
   const styleDefaults = {
@@ -317,6 +317,22 @@ function normalizeElement(el) {
 /* Compact empty rows/columns away and renumber, then make the order inside
    each grid cell sequential. Elements sharing a (row,col) render as one
    horizontal line, so a new element never shifts another row's columns. */
+/* the column for a new full-height element: just inside the full-height
+   element nearest the rows, or past every column when there is none */
+function fullHeightSlot(els) {
+  const rows = els.filter((e) => !e.place.spanAll);
+  const fulls = els.filter((e) => e.place.spanAll);
+  const maxCol = els.reduce((m, e) => Math.max(m, e.place.col), -1);
+  if (!fulls.length) return maxCol + 1;
+  const rowMax = rows.reduce((m, e) => Math.max(m, e.place.col), -1);
+  const rowMin = rows.reduce((m, e) => Math.min(m, e.place.col), Infinity);
+  const after = fulls.filter((e) => e.place.col > rowMax).sort((a, b) => a.place.col - b.place.col)[0];
+  if (after) return after.place.col - 0.5;
+  const before = fulls.filter((e) => e.place.col < rowMin).sort((a, b) => b.place.col - a.place.col)[0];
+  if (before) return before.place.col + 0.5;
+  return fulls[0].place.col - 0.5;
+}
+
 function normalizePlacement(els) {
   function compact(key) {
     const used = Array.from(new Set(els.map(function (e) { return e.place[key]; })))
@@ -840,11 +856,19 @@ function handleMessage(client, msg) {
   /* ---- dynamic elements ---- */
   else if (t === 'element-add') {
     const kind = msg.kind === 'image' ? 'image' : 'text';
-    const el = normalizeElement(deepMerge(defaultElement(kind), {
+    /* an optional patch lets the dock add a ready-made element (a chevron
+       band, say) in one message; it is validated like any other element */
+    const extra = (msg.patch && typeof msg.patch === 'object' && !Array.isArray(msg.patch)) ? (sanitize(msg.patch) || {}) : {};
+    const el = normalizeElement(deepMerge(deepMerge(defaultElement(kind), extra), {
       id: newId('el'),
-      name: msg.name || (kind === 'image' ? 'Image' : 'Text'),
+      name: msg.name || extra.name || (kind === 'image' ? 'Image' : 'Text'),
       place: { row: Math.max(0, parseInt(msg.row, 10) || 0), col: Math.max(0, parseInt(msg.col, 10) || 0), order: 999, stretch: false, rowSpan: 1, colSpan: 1 },
     }));
+    /* A full-height element with no column asked for lands in a column of
+       its own, on the rows' side of the nearest full-height element — a
+       chevron band between the bars and the logo. Column 0 would have put it
+       in a row element's cell, which then stretched to full height. */
+    if (el.place.spanAll && msg.col === undefined) el.place.col = fullHeightSlot(state.pending.elements);
     state.pending.elements.push(el);
     normalizePlacement(state.pending.elements);
     pushPending();

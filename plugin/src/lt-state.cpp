@@ -45,7 +45,7 @@ static json minimalDefaults()
 	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
-	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } },
 	    "image": { "kind": "image", "name": "Image", "enabled": true,
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
@@ -59,7 +59,7 @@ static json minimalDefaults()
 	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
-	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } }
 	  },
 	  "styleDefaults": {
@@ -81,7 +81,7 @@ static json minimalDefaults()
 	        "gradient": { "enabled": false, "type": "linear", "angle": 180, "shape": "ellipse", "posX": 50, "posY": 50,
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
-	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26 },
+	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } } ],
 	    "style": { "direction": "auto", "textAlign": "start",
 	      "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70, "sideMargin": 0, "bottomMargin": 64 },
@@ -1393,6 +1393,10 @@ void LtState::handleClientMessage(const json &msg)
 	else if (t == "element-add") {
 		std::string kind = msg.value("kind", "text") == "image" ? "image" : "text";
 		json e = defaultElement(kind.c_str());
+		/* an optional patch lets the dock add a ready-made element (a chevron
+		   band, say) in one message; normalizeElement validates it below */
+		if (msg.contains("patch") && msg["patch"].is_object())
+			e = deepMerge(e, sanitize(msg["patch"]));
 		e["id"] = newId("el");
 		if (msg.contains("name") && msg["name"].is_string())
 			e["name"] = msg["name"];
@@ -1403,6 +1407,33 @@ void LtState::handleClientMessage(const json &msg)
 		e["place"] = place;
 		json n = normalizeElement(e);
 		if (!n.is_null()) {
+			/* a full-height element with no column asked for lands in a
+			   column of its own, on the rows' side of the nearest full-height
+			   element; mirror of fullHeightSlot in server.js */
+			if (n["place"].value("spanAll", false) && !msg.contains("col")) {
+				double maxCol = -1, rowMax = -1, rowMin = 1e9;
+				bool anyFull = false;
+				double afterCol = 1e9, beforeCol = -1e9, firstFull = 0;
+				for (const auto &o : st["pending"]["elements"]) {
+					double col = o["place"].value("col", 0.0);
+					bool full = o["place"].value("spanAll", false);
+					maxCol = std::max(maxCol, col);
+					if (full) { if (!anyFull) firstFull = col; anyFull = true; }
+					else { rowMax = std::max(rowMax, col); rowMin = std::min(rowMin, col); }
+				}
+				for (const auto &o : st["pending"]["elements"]) {
+					if (!o["place"].value("spanAll", false)) continue;
+					double col = o["place"].value("col", 0.0);
+					if (col > rowMax) afterCol = std::min(afterCol, col);
+					if (col < rowMin) beforeCol = std::max(beforeCol, col);
+				}
+				double slot;
+				if (!anyFull) slot = maxCol + 1;
+				else if (afterCol < 1e9) slot = afterCol - 0.5;
+				else if (beforeCol > -1e9) slot = beforeCol + 0.5;
+				else slot = firstFull - 0.5;
+				n["place"]["col"] = slot;
+			}
 			st["pending"]["elements"].push_back(n);
 			normalizePlacement(st["pending"]["elements"]);
 			pushPendingLocked();

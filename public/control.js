@@ -1332,12 +1332,27 @@
       add({ type: 'slider', label: e.style.edges.mode === 'chevron' ? 'Chevron depth' : 'Slant amount',
         min: 4, max: 80, step: 1, unit: 'px',
         get: function () { return dig(findEl(id) || {}, 'style.edges.chamfer'); }, set: function (v) { sendEl(id, 'style.edges.chamfer', v); } });
+      add({ type: 'select', label: 'Cut ends',
+        options: e.style.edges.mode === 'chevron'
+          ? [{ v: 'both', l: 'Both ends' }, { v: 'end', l: 'Point only — flat at the start' }, { v: 'start', l: 'Notch only — flat at the end' }]
+          : [{ v: 'both', l: 'Both ends' }, { v: 'start', l: 'Start only' }, { v: 'end', l: 'End only' }],
+        title: 'Start and end follow the reading direction: in a right-to-left strap the start is on the right. A flat start sits flush against the element before it.',
+        get: function () { return dig(findEl(id) || {}, 'style.edges.ends') || 'both'; }, set: function (v) { sendEl(id, 'style.edges.ends', v); } });
+      if (e.style.edges.mode === 'chevron' && e.place.spanAll) {
+        add({ type: 'toggle', label: 'Shape the bars beside it',
+          title: 'The bars this chevron\u2019s point touches are cut at its angle where they sit \u2014 the top bar one way, the bottom bar the other \u2014 and tucked under the point, so it fits them exactly. Their backgrounds stay as they are.',
+          get: function () { return !!dig(findEl(id) || {}, 'style.edges.fitNeighbours'); }, set: function (v) { sendEl(id, 'style.edges.fitNeighbours', v); } });
+      }
     }
-    add({ type: 'select', label: 'Accent strip', options: [{ v: 'none', l: 'None' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }, { v: 'side', l: 'Side' }], rebuild: true,
+    add({ type: 'select', label: 'Accent strip',
+      options: [{ v: 'none', l: 'None' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }, { v: 'side', l: 'Side' },
+                { v: 'chevron-end', l: 'Chevron band at the end' }, { v: 'chevron-start', l: 'Chevron band at the start' }, { v: 'chevron-both', l: 'Chevron bands at both ends' }],
+      title: 'A chevron band hugs the edge, cut with this element\u2019s depth so it follows a chevron point or notch; the background stays as it is',
+      rebuild: true,
       get: function () { return dig(findEl(id) || {}, 'style.accent.mode'); }, set: function (v) { sendEl(id, 'style.accent.mode', v); } });
     if (e.style.accent && e.style.accent.mode !== 'none') {
       add({ type: 'color', label: 'Accent colour', get: function () { return dig(findEl(id) || {}, 'style.accent.color'); }, set: function (v) { sendEl(id, 'style.accent.color', v); } });
-      add({ type: 'slider', label: 'Accent size', min: 1, max: 30, step: 1, unit: 'px',
+      add({ type: 'slider', label: 'Accent size', min: 1, max: 80, step: 1, unit: 'px',
         get: function () { return dig(findEl(id) || {}, 'style.accent.thickness'); }, set: function (v) { sendEl(id, 'style.accent.thickness', v); } });
     }
 
@@ -1736,8 +1751,23 @@
     addT.addEventListener('click', function () { send({ type: 'element-add', kind: 'text' }); });
     var addI = el('button', null, '＋ image');
     addI.addEventListener('click', function () { send({ type: 'element-add', kind: 'image' }); });
+    /* a chevron band: an empty text element that is nothing but its box,
+       exactly the height of what it stands beside, chained with the look's
+       depth. Full height by default, as a divider before a logo usually is. */
+    var addC = el('button', null, '＋ chevron');
+    addC.title = 'A chevron band the exact height of its row, cut to the look\u2019s depth';
+    addC.addEventListener('click', function () {
+      var depth = getVal('style.edges.chamfer') || 26;
+      send({ type: 'element-add', kind: 'text', name: 'Chevron', patch: {
+        text: '',
+        place: { spanAll: true },
+        style: { minWidth: Math.round(depth * 1.7), padX: 0, padY: 0, bg: '#2aa8e0', bgOpacity: 1,
+                 edges: { mode: 'chevron', chamfer: depth, ends: 'both', fitNeighbours: true } },
+      } });
+    });
     addRow.appendChild(addT);
     addRow.appendChild(addI);
+    addRow.appendChild(addC);
     body.appendChild(addRow);
   }
 

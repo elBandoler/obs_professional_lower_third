@@ -280,6 +280,30 @@ and ids that collide get fresh ones, so importing the same file twice changes no
 In a normal browser, `http://127.0.0.1:3620/api/presets.json` downloads the same file.
 Both work in the Node fallback too.
 
+### Chevron bands and one-sided cuts
+
+- **＋ chevron** (under ELEMENTS) adds a chevron *band*: an empty element that is nothing but
+  its box, exactly the height of what it stands beside, cut to the look's chevron depth and
+  chained to its neighbours. It arrives full-height, as a divider before a logo usually is;
+  give it a colour or gradient on its COLOUR tab and a width with *Min width*.
+- **Cut ends** (BOX tab, with Chevron or Slanted edges) chooses which ends are cut: *Both*,
+  *Point only* (flat at the start, so it sits flush against the element before it — the
+  logo, say) or *Notch only* (flat at the end). Start and end follow the reading direction:
+  in a right-to-left strap the start is on the right. The text inset and the chain overlap
+  follow the cut, so a flat side keeps your own padding and never overlaps its neighbour.
+- **Chevron accent band** (BOX tab › *Accent strip* › *Chevron band at the end / start / both*):
+  a band in the accent colour hugs the element's edge, one *Accent size* plus one depth wide,
+  and its free side is cut like a chevron with the element's own depth — so it runs parallel
+  to a chevron point or notch automatically, and on a square element its outer side stays
+  flat against the edge. The element's own background (colour, gradient, picture) is left
+  exactly as it was. Text is kept clear of the band.
+- **Shape the bars beside it** (BOX tab of a *full-height* chevron): the bars its point
+  touches are cut at the angle of the point where each bar sits — the top bar slanting one
+  way, the bottom bar the other, a bar that straddles the middle getting the notch — and
+  tucked under the point, so a full-height chevron fits a stack of ordinary bars exactly.
+  Only the touching end is cut; the bars' own backgrounds stay. The **＋ chevron** band has
+  this on from the start.
+
 ## 5. Hotkeys / Stream Deck / automation
 
 Any tool that can hit a URL can drive it:

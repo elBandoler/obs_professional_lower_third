@@ -155,6 +155,35 @@ body.bg-green { background: #00b140; }
   );
 }
 
+/* One-sided cuts. data-ends="end" keeps the START flat and cuts only the end
+   (a chevron with its point but no notch; a slant on the end only);
+   data-ends="start" keeps the END flat (notch only; slant on the start only).
+   Start and end follow the reading direction, so each has an RTL mirror. */
+.box[data-edges="chevron"][data-ends="end"] {
+  clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 50%, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
+}
+.box[data-edges="chevron"][data-ends="start"] {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--chamfer, 26px) 50%);
+}
+#stage[data-dir="rtl"] .box[data-edges="chevron"][data-ends="end"] {
+  clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, 100% 100%, var(--chamfer, 26px) 100%, 0 50%);
+}
+#stage[data-dir="rtl"] .box[data-edges="chevron"][data-ends="start"] {
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--chamfer, 26px)) 50%, 100% 100%, 0 100%);
+}
+.box[data-edges="chamfer"][data-ends="start"] {
+  clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, 100% 100%, 0 100%);
+}
+.box[data-edges="chamfer"][data-ends="end"] {
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
+}
+#stage[data-dir="rtl"] .box[data-edges="chamfer"][data-ends="start"] {
+  clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 100%, 0 100%);
+}
+#stage[data-dir="rtl"] .box[data-edges="chamfer"][data-ends="end"] {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, var(--chamfer, 26px) 100%);
+}
+
 .box[data-edges="rounded"] { border-radius: var(--radius, 14px); }
 .box[data-edges="chamfer"] {
   clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
@@ -192,6 +221,48 @@ body.bg-green { background: #00b140; }
 }
 #stage[data-dir="rtl"] .box[data-accent="side"]::before {
   left: auto; right: 0;
+}
+
+/* Chevron accent bands. A band the full height of the box hugging its start
+   (::before) or end (::after) edge, one thickness plus one depth wide. Its
+   FREE side is cut like a chevron with the box's own --chamfer, so it runs
+   parallel to the box's point or notch; its OUTER side is flat and is shaped
+   by the box's own clip-path — a chevron box makes it a point or a notch, a
+   square box leaves it flat. The box's background is untouched. */
+.box[data-accent="chevron-start"]::before,
+.box[data-accent="chevron-both"]::before,
+.box[data-accent="chevron-end"]::after,
+.box[data-accent="chevron-both"]::after {
+  content: "";
+  position: absolute;
+  display: block;
+  top: 0; bottom: 0;
+  width: calc(var(--accent-h, 6px) + var(--chamfer, 26px));
+  background: var(--accent-color, #1c56d6);
+  z-index: 2;
+  pointer-events: none;
+}
+/* start band: LTR at the left, free side is a point toward the text */
+.box[data-accent="chevron-start"]::before,
+.box[data-accent="chevron-both"]::before {
+  left: 0;
+  clip-path: polygon(0 0, calc(100% - var(--chamfer, 26px)) 0, 100% 50%, calc(100% - var(--chamfer, 26px)) 100%, 0 100%);
+}
+/* end band: LTR at the right, free side is a notch (parallel to the point) */
+.box[data-accent="chevron-end"]::after,
+.box[data-accent="chevron-both"]::after {
+  right: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, var(--chamfer, 26px) 50%);
+}
+#stage[data-dir="rtl"] .box[data-accent="chevron-start"]::before,
+#stage[data-dir="rtl"] .box[data-accent="chevron-both"]::before {
+  left: auto; right: 0;
+  clip-path: polygon(var(--chamfer, 26px) 0, 100% 0, 100% 100%, var(--chamfer, 26px) 100%, 0 50%);
+}
+#stage[data-dir="rtl"] .box[data-accent="chevron-end"]::after,
+#stage[data-dir="rtl"] .box[data-accent="chevron-both"]::after {
+  right: auto; left: 0;
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--chamfer, 26px)) 50%, 100% 100%, 0 100%);
 }
 
 /* ------------------------------------------------- property morphing */
