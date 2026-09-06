@@ -50,7 +50,7 @@ const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
    that works in OBS and fails in the standalone server is a mystery nobody
    enjoys. Both engines buffer the whole body in memory before writing, and
    the plugin's buffer lives inside the OBS process, so this is not free. */
-const UPLOAD_MAX = 64 * 1024 * 1024;
+const UPLOAD_MAX = 256 * 1024 * 1024;
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -1469,9 +1469,13 @@ async function handleApi(req, res, url) {
        <video muted loop> in the overlay. Keep in step with lt-server.cpp. */
     const vidExt = ['.mp4', '.webm', '.mov', '.m4v'];
     const fontExt = ['.ttf', '.otf', '.woff', '.woff2'];
-    /* an unrecognised extension is forced to .png rather than rejected — that
-       fallback is what stops a caller-supplied name deciding what is served */
-    const useExt = imgExt.includes(ext) || vidExt.includes(ext) || fontExt.includes(ext) ? ext : '.png';
+    /* an unrecognised extension is refused, not renamed: forcing .png used to
+       turn a .mkv into a "picture" that could never show. The allowlist is
+       still what stops a caller-supplied name deciding what is served. */
+    if (!(imgExt.includes(ext) || vidExt.includes(ext) || fontExt.includes(ext))) {
+      return sendJson(res, 415, { ok: false, error: 'Cannot use a ' + (ext || 'file without an extension') + ' file. Use PNG, JPG, GIF, SVG or WebP for pictures, WebM for video (MP4/MOV play only outside OBS), TTF/OTF/WOFF for fonts.' });
+    }
+    const useExt = ext;
     const prefix = fontExt.includes(useExt) ? 'font-' : 'logo-';
     const name = prefix + crypto.randomBytes(4).toString('hex') + useExt;
     try {

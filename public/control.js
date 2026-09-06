@@ -2265,20 +2265,65 @@
     send({ type: 'anim', patch: { enabled: $('#anim-master').checked } });
   });
 
+  /* What this browser can decode is what the overlay can decode: the dock
+     and the overlay run in the same engine, and inside OBS that engine has
+     no H.264 — an MP4 that plays in Chrome shows nothing in OBS. Check
+     here, where the file is picked, instead of letting it fail in silence. */
+  var LOGO_EXT = /\.(png|jpe?g|gif|svg|webp|webm|mp4|mov|m4v)$/i;
+  var VIDEO_EXT = /\.(webm|mp4|mov|m4v)$/i;
+  function videoSupport(name) {
+    var v = document.createElement('video');
+    if (!v.canPlayType) return '';
+    if (/\.webm$/i.test(name)) return v.canPlayType('video/webm; codecs="vp9"') || v.canPlayType('video/webm; codecs="vp8"');
+    return v.canPlayType('video/mp4; codecs="avc1.42E01E"');
+  }
+  /* load the uploaded file for real and say whether it plays, with its length */
+  function probeVideo(url) {
+    var v = document.createElement('video');
+    v.muted = true; v.preload = 'metadata';
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; uploadNote('Video uploaded — still loading its first frame…'); } }, 6000);
+    v.addEventListener('loadedmetadata', function () {
+      if (done) return; done = true; clearTimeout(t);
+      var s = Math.round(v.duration || 0);
+      uploadNote('Video OK — ' + Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2) + ', ' + v.videoWidth + '×' + v.videoHeight + '. It plays here, so it plays in OBS.');
+    });
+    v.addEventListener('error', function () {
+      if (done) return; done = true; clearTimeout(t);
+      uploadNote('This video cannot be decoded here, so it will not show in OBS either. Convert it to WebM (VP9): ffmpeg -i in.mp4 -c:v libvpx-vp9 -b:v 2M -an out.webm');
+    });
+    v.src = url;
+  }
+
   $('#logo-file').addEventListener('change', function () {
     var file = this.files && this.files[0];
     this.value = '';
     if (!file || !pendingImageSetter) return;
     var setter = pendingImageSetter;
     pendingImageSetter = null;
+    if (!LOGO_EXT.test(file.name)) {
+      var ext = (file.name.match(/\.([^.]+)$/) || [])[1];
+      uploadNote('Cannot use a ' + (ext ? ext.toUpperCase() : 'file without an extension') + ' file. Pictures: PNG, JPG, GIF, SVG, WebP. Video: WebM (MP4/MOV play only outside OBS).');
+      return;
+    }
+    if (VIDEO_EXT.test(file.name) && videoSupport(file.name) === '') {
+      uploadNote((/\.webm$/i.test(file.name) ? 'This browser cannot decode WebM' : 'OBS\u2019s browser cannot decode H.264 (MP4/MOV)') +
+        ' — the logo would never show. Convert to WebM (VP9): ffmpeg -i in.mp4 -c:v libvpx-vp9 -b:v 2M -an out.webm');
+      return;
+    }
+    uploadNote('Uploading ' + file.name + ' (' + Math.round(file.size / 1048576) + ' MB)…');
     fetch('/api/upload?name=' + encodeURIComponent(file.name), { method: 'POST', body: file })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (j.ok && j.url) { setter(j.url); syncAll(); return; }
+        if (j.ok && j.url) {
+          setter(j.url); syncAll();
+          if (VIDEO_EXT.test(j.url)) probeVideo(j.url); else uploadNote('Uploaded.');
+          return;
+        }
         /* an oversized or unwritable file used to fail in total silence */
         uploadNote(j.error || 'Upload failed');
       })
-      .catch(function () { uploadNote('Upload failed — is the file too large?'); });
+      .catch(function () { uploadNote('Upload failed — is the file too large (max 256 MB)?'); });
   });
 
   $('#font-file').addEventListener('change', function () {

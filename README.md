@@ -154,8 +154,13 @@ Advanced sections:
   - Columns are shared between rows, so an element keeps lining up with the one above it
     (a badge stays exactly above a logo).
 - **Logos: stills, video and rotation** — an image element's picture can be a still
-  (PNG/JPG/SVG/**GIF**, which animates as it always has) or a short **video**
-  (**MP4 / WebM / MOV**). Video logos play muted and looping — upload one with the same
+  (PNG/JPG/SVG/**GIF**, which animates as it always has) or a short **video**. **Inside
+  OBS, only WebM plays** (VP8/VP9): OBS's browser engine ships without H.264, so an MP4 or
+  MOV that plays fine in Chrome shows nothing in an OBS source or dock. The dock checks the
+  file where you pick it and says so. To convert:
+  `ffmpeg -i in.mp4 -c:v libvpx-vp9 -b:v 2M -an out.webm`
+  (MP4/MOV are still accepted for the Node fallback viewed in a normal browser.)
+  Video logos play muted and looping — upload one with the same
   📁 button; nothing else to set up.
   - Under **MORE LOGOS** you can give one element several logos. The picture in the *Image*
     box stays the **main** logo; the ones you add below are the alternates.
@@ -295,7 +300,8 @@ GET http://127.0.0.1:3620/api/quit      shut the server down
 - **Control from a tablet/another PC:** start with `node server.js --host 0.0.0.0` and open
   `http://<your-pc-ip>:3620/control` (allow it in Windows Firewall).
 - **Video logo not playing?** It must be a format the OBS browser engine can decode — WebM
-  (VP8/VP9) and H.264 MP4 are safe. Uploads are capped at 64 MB; a logo sting should be a
+  (VP8/VP9) only: OBS's browser engine has no H.264, so an MP4 or MOV shows nothing
+  there even though it plays in Chrome. Uploads are capped at 256 MB; a logo sting should be a
   small fraction of that. Audio is always muted.
 - **Fonts:** the overlay uses fonts installed on the OBS machine (default stack is
   Hebrew-friendly). For Google Fonts, paste the CSS URL into *Typography → Font CSS URL* and

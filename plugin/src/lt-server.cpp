@@ -446,7 +446,7 @@ int LtServer::apiHandler(struct mg_connection *conn, void *cbdata)
 
 	if (act == "upload" && method == "POST") {
 		/* keep in step with UPLOAD_MAX in server.js */
-		const size_t UPLOAD_MAX = 64 * 1024 * 1024;
+		const size_t UPLOAD_MAX = 256 * 1024 * 1024;
 		std::string rawName = params.count("name") ? params["name"] : "upload.png";
 		/* extension of the BASENAME, matching path.extname(path.basename(..))
 		   in server.js — scanning the whole string let a directory dot decide
@@ -468,8 +468,14 @@ int LtServer::apiHandler(struct mg_connection *conn, void *cbdata)
 		   vidExt list in server.js. */
 		bool isVid = (ext == "mp4" || ext == "webm" || ext == "mov" || ext == "m4v");
 		bool isFont = (ext == "ttf" || ext == "otf" || ext == "woff" || ext == "woff2");
-		if (!isImg && !isVid && !isFont)
-			ext = "png";
+		/* refused, not renamed: forcing .png used to turn a .mkv into a
+		   "picture" that could never show. Keep in step with server.js. */
+		if (!isImg && !isVid && !isFont) {
+			send_json(conn, 415, {{"ok", false},
+			                      {"error", std::string("Cannot use a ") + (ext.empty() ? "file without an extension" : ext) +
+			                                " file. Use PNG, JPG, GIF, SVG or WebP for pictures, WebM for video (MP4/MOV play only outside OBS), TTF/OTF/WOFF for fonts."}});
+			return 415;
+		}
 		static std::mt19937_64 rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
 		std::ostringstream nm;
 		nm << (isFont ? "font-" : "logo-") << std::hex << (rng() & 0xffffffffULL) << "." << ext;
@@ -496,7 +502,7 @@ int LtServer::apiHandler(struct mg_connection *conn, void *cbdata)
 					out.close();
 					std::error_code ec;
 					fs::remove(f, ec);
-					send_json(conn, 413, {{"ok", false}, {"error", "File too large (max 64 MB)"}});
+					send_json(conn, 413, {{"ok", false}, {"error", "File too large (max 256 MB)"}});
 					return 413;
 				}
 				out.write(buf, n);
