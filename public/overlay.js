@@ -1028,13 +1028,16 @@
     return stage.classList.contains('anim-in') || stage.classList.contains('anim-out') ||
       !!stage.querySelector('.react-flick, .react-replay, .react-pulse, .img-enter, .img-exit');
   }
-  function fitToChevrons(look) {
+  function fitToChevrons(look, force) {
     if (!grid) return;
     /* Never measure while something is animating: the boxes are transformed
        mid-flight (a slide-up sits lower, a pop is smaller), the touching test
        fails, and a pass run then would clear every cut and apply none — which
-       is exactly what SHOW after HIDE did. Come back when the motion is over. */
-    if (fitBusy()) {
+       is exactly what SHOW after HIDE did. Come back when the motion is over.
+       A forced pass is the one taken on the still frame just before an
+       entrance starts, so the bars enter already shaped. */
+    if (force && fitRetry) { clearTimeout(fitRetry); fitRetry = null; }
+    if (!force && fitBusy()) {
       if (!fitRetry) fitRetry = setTimeout(function () { fitRetry = null; fitToChevrons(current || look); }, 120);
       return;
     }
@@ -1248,6 +1251,11 @@
     stage.dataset.in = anim.inStyle;
     stage.classList.remove('anim-out', 'hidden');
     void stage.offsetWidth;
+    /* the bars must enter already shaped: this is the one still frame with
+       nothing moving, so measure and cut here, not after the entrance — a
+       SHOW arriving while the hide was still running used to find the
+       stage "busy" and put the cuts off until the entrance had finished */
+    if (current) fitToChevrons(current, true);
     stage.classList.add('anim-in');
     animTimer = setTimeout(function () {
       animTimer = null;
