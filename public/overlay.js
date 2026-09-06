@@ -232,9 +232,15 @@
   function layoutOf(look) {
     var els = visibleElements(look);
     var rows = 0, cols = 0;
+    /* the grid starts at the first row that has a bar: an empty leading row
+       is zero tall but still carries a row gap, which made every full-height
+       element one gap taller than the bars */
+    var firstRow = Infinity;
+    els.forEach(function (e) { if (!e.place.spanAll) firstRow = Math.min(firstRow, e.place.row); });
+    if (!isFinite(firstRow)) firstRow = 0;
     els.forEach(function (e) {
       /* full-height elements must not create rows of their own */
-      if (!e.place.spanAll) rows = Math.max(rows, e.place.row + (e.place.rowSpan || 1));
+      if (!e.place.spanAll) rows = Math.max(rows, e.place.row - firstRow + (e.place.rowSpan || 1));
       cols = Math.max(cols, e.place.col + (e.place.colSpan || 1));
     });
     rows = Math.max(rows, 1);
@@ -245,7 +251,7 @@
 
     var cells = {};
     els.forEach(function (e) {
-      var row = e.place.spanAll ? 0 : e.place.row;
+      var row = e.place.spanAll ? 0 : e.place.row - firstRow;
       var span = e.place.spanAll ? rows : (e.place.rowSpan || 1);
       var k = row + ':' + e.place.col;
       if (!cells[k]) {
@@ -260,6 +266,7 @@
     });
 
     return {
+      firstRow: firstRow,
       els: els, cells: cells,
       rows: Math.max(rows, 1), cols: Math.max(cols, 1),
       stretchCols: stretchCols,
@@ -815,7 +822,7 @@
        so filling keeps stacked side elements (badge over logo) flush. In a
        flexible (1fr) column a non-stretching bar hugs its own text instead. */
     var inFlexCol = !!(L && (L.flexCols || L.stretchCols)[e.place.col]);
-    var cellKey = (e.place.spanAll ? 0 : e.place.row) + ':' + e.place.col;
+    var cellKey = (e.place.spanAll ? 0 : e.place.row - (L.firstRow || 0)) + ':' + e.place.col;
     var sharesCell = !!(L && L.cells[cellKey] && L.cells[cellKey].els.length > 1);
     /* an auto margin eats the free space in the cell, which pins the box to
        the opposite edge — this is what splits two elements across a row */

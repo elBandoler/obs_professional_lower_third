@@ -373,14 +373,19 @@ function orderFullGroup(els, el, index) {
 }
 
 function normalizePlacement(els) {
-  function compact(key) {
-    const used = Array.from(new Set(els.map(function (e) { return e.place[key]; })))
+  function compact(key, pick) {
+    const subject = pick ? els.filter(pick) : els;
+    const used = Array.from(new Set(subject.map(function (e) { return e.place[key]; })))
       .sort(function (a, b) { return a - b; });
     const map = {};
     used.forEach(function (v, i) { map[v] = i; });
-    els.forEach(function (e) { e.place[key] = map[e.place[key]]; });
+    subject.forEach(function (e) { e.place[key] = map[e.place[key]]; });
   }
-  compact('row');
+  /* Rows are numbered over the bars alone. A full-height element belongs to
+     no row, and counting its row 0 kept an empty first row alive whose row
+     gap made everything full-height one gap taller than the bars. */
+  compact('row', function (e) { return !e.place.spanAll; });
+  els.forEach(function (e) { if (e.place.spanAll) e.place.row = 0; });
   compact('col');
 
   const byCell = {};

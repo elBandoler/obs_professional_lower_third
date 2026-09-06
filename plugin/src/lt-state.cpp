@@ -531,14 +531,19 @@ void LtState::normalizePlacement(json &els)
 	const char *keys[2] = { "row", "col" };
 	for (int ki = 0; ki < 2; ki++) {
 		const char *key = keys[ki];
+		/* rows are numbered over the bars alone: a full-height element belongs
+		   to no row (mirror of server.js) */
+		bool rowsOnlyBars = (ki == 0);
 		std::vector<double> used;
 		for (auto &e : els) {
+			if (rowsOnlyBars && e["place"].value("spanAll", false)) continue;
 			double v = e["place"][key].get<double>();
 			if (std::find(used.begin(), used.end(), v) == used.end())
 				used.push_back(v);
 		}
 		std::sort(used.begin(), used.end());
 		for (auto &e : els) {
+			if (rowsOnlyBars && e["place"].value("spanAll", false)) { e["place"][key] = 0; continue; }
 			double v = e["place"][key].get<double>();
 			int idx = (int)(std::find(used.begin(), used.end(), v) - used.begin());
 			e["place"][key] = idx;
