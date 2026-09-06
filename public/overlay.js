@@ -1042,6 +1042,7 @@
     function shapeSide(f, nf, rf, side, sideLeft, c, inset, tipTop, tipHeight) {
       var half = tipHeight / 2;
       var spF = spacesOf(f, rtl);
+      var shaped = 0;
       els.forEach(function (e) {
         if (e === f || e.place.spanAll) return;
         var n = nodes[e.id];
@@ -1076,7 +1077,9 @@
         var padCut = ((est.padX || 0) + c) + 'px';
         if (sideLeft) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
         n._fit = true;
+        shaped++;
       });
+      return shaped;
     }
 
     els.forEach(function (f) {
@@ -1123,11 +1126,15 @@
       var endLeft = rtl;                  /* the point is at the reading-direction end */
       if (ed.ends !== 'start') shapeSide(f, nf, rf, 'point', endLeft, cd, 0, rf.top, rf.height);
       if (ed.ends !== 'end') {
-        /* the bars come to the notch instead of the chevron pulling over them */
-        var spF = spacesOf(f, rtl);
-        if (endLeft) nf.cell.style.marginRight = spF.right ? spF.right + 'px' : '';
-        else nf.cell.style.marginLeft = spF.left ? spF.left + 'px' : '';
-        shapeSide(f, nf, rf, 'notch', !endLeft, cd, 0, rf.top, rf.height);
+        var came = shapeSide(f, nf, rf, 'notch', !endLeft, cd, 0, rf.top, rf.height);
+        /* when bars came to the notch, the chevron must not also pull over
+           them; when what is there is a logo or another full-height element,
+           the usual overlap pull is what closes the seam — keep it */
+        if (came) {
+          var spF = spacesOf(f, rtl);
+          if (endLeft) nf.cell.style.marginRight = spF.right ? spF.right + 'px' : '';
+          else nf.cell.style.marginLeft = spF.left ? spF.left + 'px' : '';
+        }
       }
     });
   }
