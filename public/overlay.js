@@ -30,11 +30,13 @@
   var DESIGN_W = parseInt(qs.get('w'), 10) || 0;
   var DESIGN_H = parseInt(qs.get('h'), 10) || 0;
   var lastFit = null;
+  var stageZ = 1;   /* the scale the stage is drawn at; 1 when it fills its viewport */
   function fitStage() {
     if (!(DESIGN_W > 0 && DESIGN_H > 0)) return;
     var z = window.innerWidth / DESIGN_W;
     if (!(z > 0) || !isFinite(z)) return;
     var t = Math.abs(z - 1) < 0.0005 ? '' : 'scale(' + z.toFixed(5) + ')';
+    stageZ = t ? z : 1;
     if (t === lastFit) return;
     lastFit = t;
     stage.style.transform = t;
@@ -92,15 +94,25 @@
      pop/slide animation would measure the element at its animated scale and pin
      the bar too narrow. Divide the scale back out. offsetWidth is not an option:
      it rounds down, and that lost sub-pixel is what re-wraps the last word. */
+  /* A rect in the stage's own CSS pixels. The stage is scaled to fit its
+     viewport when the page is zoomed or the source is not the design size
+     (fitStage), and a measurement written back as a pixel value — a width
+     pin, a frozen line, a chevron cut — must not carry that scale: with the
+     stage at 0.47 a bar was animated to 253px instead of 537. */
+  function crect(el) {
+    var r = el.getBoundingClientRect();
+    var z = stageZ || 1;
+    return { left: r.left / z, top: r.top / z, right: r.right / z, bottom: r.bottom / z, width: r.width / z, height: r.height / z };
+  }
   function rectW(el) {
-    var w = el.getBoundingClientRect().width;
+    var w = crect(el).width;
     var t = getComputedStyle(el).transform;
     var m = /^matrix(?:3d)?\(\s*([^,]+),/.exec(t || '');
     var sx = m ? parseFloat(m[1]) : 1;
     return (sx && Math.abs(sx - 1) > 0.001) ? w / sx : w;
   }
   function rectH(el) {
-    var r = el.getBoundingClientRect();
+    var r = crect(el);
     var t = getComputedStyle(el).transform;
     var m = /^matrix\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*([^,]+),/.exec(t || '');
     var sy = m ? parseFloat(m[1]) : 1;
@@ -1069,7 +1081,7 @@
         if (e === f || e.place.spanAll) return;
         var n = nodes[e.id];
         if (!n) return;
-        var r = n.box.getBoundingClientRect();
+        var r = crect(n.box);
         if (!r.height || r.bottom <= tipTop + 1 || r.top >= tipTop + tipHeight - 1) return;
         var facing = sideLeft ? r.right : r.left;
         var dist = sideLeft ? (rf.left - facing) : (facing - rf.right);
@@ -1109,7 +1121,7 @@
       if (!(fst.edges && fst.edges.fitNeighbours)) return;
       var nf = nodes[f.id];
       if (!nf) return;
-      var rf = nf.box.getBoundingClientRect();
+      var rf = crect(nf.box);
       if (!rf.height) return;
       if (f.kind === 'image') {
         /* a PICTURE chevron: the point is the artwork's own, as the dock's
@@ -1117,7 +1129,7 @@
            rect. A picture with no readable shape falls back to the element's
            depth setting and the reading direction's end. */
         var sh = f.image && f.image.shape;
-        var ri = nf.img ? nf.img.getBoundingClientRect() : rf;
+        var ri = nf.img ? crect(nf.img) : rf;
         if (!ri.width || !ri.height) return;
         var c, pointLeft;
         if (sh && sh.point !== 'none' && sh.depthFrac > 0) {
