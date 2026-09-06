@@ -132,6 +132,12 @@
   /* element fields --------------------------------------------------- */
 
   function elements() { return (S && S.pending && S.pending.elements) || []; }
+  /* the element as it is ON AIR (the last committed state), or null */
+  function liveEl(id) {
+    var arr = (S && S.live && S.live.elements) || [];
+    for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i];
+    return null;
+  }
   function findEl(id) {
     return elements().filter(function (e) { return e.id === id; })[0];
   }
@@ -882,48 +888,61 @@
 
   function buildSnippets(elem, compact) {
     var id = elem.id;
-    var wrap = el('div', 'snip-wrap');
+    /* SIMPLE lists the saved texts as full-width rows and marks the one that
+       is loaded; ADVANCED keeps its pills */
+    var wrap = el('div', compact ? 'snip-wrap snip-lines' : 'snip-wrap');
 
     var lastSig = null;
+    var groups = [];
+    function current() { var e = findEl(id); return e ? (e.text || '') : ''; }
     function render() {
       var e = findEl(id);
-      if (!e || e.kind !== 'text') { wrap.innerHTML = ''; lastSig = null; return; }
+      if (!e || e.kind !== 'text') { wrap.innerHTML = ''; lastSig = null; groups = []; return; }
       /* rebuilding under the operator's finger swallows the click */
       var sig = snippetsOf(id).map(function (s) { return s.id + ':' + s.label; }).join('|');
       if (sig === lastSig) return;
       lastSig = sig;
       wrap.innerHTML = '';
-      var list = el('div', 'snip-list');
+      groups = [];
+      var list = el('div', compact ? 'snip-col' : 'snip-list');
       snippetsOf(id).forEach(function (s) {
-        var b = el('button', 'snip', s.label || s.text || '—');
+        var b = el('button', compact ? 'snip-line' : 'snip', s.label || s.text || '—');
         b.title = 'Load this wording into the preview (then press SHOW to put it on air)';
+        if (compact) b.setAttribute('dir', 'auto');
         b.addEventListener('click', function () {
           send({ type: 'snippet-load', id: id, snippetId: s.id });
         });
-        var x = el('button', 'snip-x', '✕');
+        var x = el('button', compact ? 'snip-line-x' : 'snip-x', '✕');
         x.title = 'Delete this saved text';
         x.addEventListener('click', function () {
           send({ type: 'snippet-delete', id: id, snippetId: s.id });
         });
-        var g = el('span', 'snip-group');
+        var g = el('span', compact ? 'snip-row' : 'snip-group');
         g.appendChild(b); g.appendChild(x);
+        g._text = s.text;
+        groups.push(g);
         list.appendChild(g);
       });
       /* No window.prompt(): it is unreliable inside OBS's embedded browser.
          The saved text itself is the label, which is what an operator scans for. */
-      var save = el('button', 'snip snip-save', '＋ save text');
+      var save = el('button', compact ? 'snip-line snip-save' : 'snip snip-save', '＋ save text');
       save.title = 'Save this element’s current text so you can recall it later';
       save.addEventListener('click', function () {
-        var cur = findEl(id);
-        var text = (cur && cur.text) || '';
+        var text = current();
         if (!text.trim()) return;
         send({ type: 'snippet-save', id: id, label: cutChars(text, 40), text: text });
       });
       list.appendChild(save);
       wrap.appendChild(list);
     }
-    render();
-    return { node: wrap, sync: render };
+    function sync() {
+      render();
+      if (!compact) return;
+      var cur = current();
+      groups.forEach(function (g) { g.classList.toggle('cued', g._text === cur); });
+    }
+    sync();
+    return { node: wrap, sync: sync };
   }
 
   /* ------------------------------------------------------- element cards */
@@ -1496,8 +1515,20 @@
   function renderSimple(force) {
     var host = $('#simple-texts');
     if (!host || !S) return;
-    var texts = elements().filter(function (e) { return e.kind === 'text' && e.enabled !== false; });
-    var sig = texts.map(function (e) { return e.id + ':' + snippetsOf(e.id).length + ':' + e.name; }).join('|');
+    /* rows in the order they sit on the strap — row 1 left to right, then
+       row 2 — with full-height elements last, not the order they were made */
+    var texts = elements().filter(function (e) { return e.kind === 'text' && e.enabled !== false; })
+      .sort(function (a, b) {
+        var sa = a.place.spanAll ? 1 : 0, sb = b.place.spanAll ? 1 : 0;
+        if (sa !== sb) return sa - sb;
+        return (a.place.row - b.place.row) || (a.place.col - b.place.col) || (a.place.order - b.place.order);
+      });
+    /* saved texts are no longer part of the signature: the list under each
+       field refreshes itself, so saving one no longer rebuilds the field
+       under the operator's cursor */
+    var sig = texts.map(function (e) {
+      return e.id + ':' + e.name + ':' + e.place.row + ',' + e.place.col + ',' + e.place.order + ',' + (e.place.spanAll ? 1 : 0);
+    }).join('|');
     if (!force && sig === simpleSig) {
       simpleSyncs.forEach(function (s) { s(); });
       return;
@@ -1513,19 +1544,51 @@
 
     texts.forEach(function (e) {
       var block = el('div', 'simple-block');
-      var r = makeRow({
-        type: 'text', label: e.name || 'Text',
-        get: function () { var x = findEl(e.id); return x ? x.text : ''; },
-        set: function (v) { sendEl(e.id, 'text', v); },
+      var head = el('div', 'simple-head');
+      var name = el('span', 'simple-name', e.name || 'Text');
+      var dot = el('span', 'simple-dot');
+      dot.title = 'Changed since it went on air — press SHOW to update';
+      head.appendChild(name);
+      head.appendChild(dot);
+      block.appendChild(head);
+
+      /* a field that grows with the text: the name sits above it, so a
+         Hebrew headline gets the whole width and wraps instead of scrolling
+         off the edge. Enter stays inert, as in the single-line box this
+         replaces; Shift+Enter breaks a line. */
+      var ta = el('textarea', 'simple-text');
+      ta.rows = 1;
+      ta.setAttribute('dir', 'auto');
+      ta.spellcheck = false;
+      function grow() {
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+      }
+      ta.addEventListener('input', function () { sendEl(e.id, 'text', ta.value); grow(); });
+      ta.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey) ev.preventDefault();
       });
-      block.appendChild(r.row);
-      simpleSyncs.push(r.sync);
+      block.appendChild(ta);
+      simpleSyncs.push(function () {
+        var cur = findEl(e.id);
+        if (!cur) return;
+        if (ta !== document.activeElement && ta.value !== (cur.text || '')) { ta.value = cur.text || ''; grow(); }
+        var live = liveEl(e.id);
+        dot.classList.toggle('on', !!(S.visible && live && (live.text || '') !== (cur.text || '')));
+      });
+
       var sn = buildSnippets(e, true);
       block.appendChild(sn.node);
       simpleSyncs.push(sn.sync);
       host.appendChild(block);
     });
     simpleSyncs.forEach(function (s) { s(); });
+    /* a textarea measures its content only once it is in the document */
+    var tas = host.querySelectorAll('textarea.simple-text');
+    for (var i = 0; i < tas.length; i++) {
+      tas[i].style.height = 'auto';
+      tas[i].style.height = Math.min(tas[i].scrollHeight, 120) + 'px';
+    }
   }
 
   /* ------------------------------------------------- global field schema */

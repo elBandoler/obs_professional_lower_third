@@ -123,11 +123,13 @@ The dock has two views, toggled with the **SIMPLE / ADVANCED** button in its hea
 (remembered per machine):
 
 - **Simple** — operator mode: the preview, the SHOW / HIDE controls, and one text box per
-  text element with its saved-text chips underneath. **Nothing that loads a preset is
-  reachable here** — a single tap would replace the whole look — so presets, both the
-  quick-launch buttons and the editor, are hidden in this view. Switch to ADVANCED to load
-  one. Saved *texts* still work per element, which is the recall an operator actually wants
-  mid-show.
+  text element, in the order the elements sit on the strap. The box grows with its text,
+  so a long Hebrew headline wraps instead of scrolling off the edge; the element's saved
+  texts are listed underneath it, full width, with the one currently loaded marked in
+  green. An amber dot beside a name means that row differs from what is on air — press
+  SHOW to update. **Nothing that loads a preset is reachable here** — a single tap would
+  replace the whole look — so presets, both the quick-launch buttons and the editor, are
+  hidden in this view. Switch to ADVANCED to load one.
 - **Advanced** — the full editor below.
 
 Advanced sections:

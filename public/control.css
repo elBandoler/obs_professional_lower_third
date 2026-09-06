@@ -633,6 +633,75 @@ button.snip-save:hover { color: var(--text); }
 }
 .simple-block .row > label.lbl { flex: 0 0 86px; }
 
+/* the field's name above it, an amber dot while the row differs from air */
+.simple-head { display: flex; align-items: center; gap: 6px; min-height: 14px; }
+.simple-name {
+  flex: 1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.simple-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: none; flex: none; }
+.simple-dot.on { display: inline-block; }
+
+/* a field that grows with its text */
+textarea.simple-text {
+  width: 100%;
+  height: auto;
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 15px;
+  line-height: 1.35;
+  resize: none;
+  overflow: hidden;
+  unicode-bidi: plaintext;
+}
+
+/* saved texts as rows: full width, the loaded one marked, delete at the end */
+.snip-lines { margin-top: 0; }
+.snip-col { display: flex; flex-direction: column; gap: 3px; }
+.snip-row { display: flex; align-items: stretch; min-width: 0; }
+button.snip-line {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  font-size: 12px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 5px 0 0 5px;
+  background: #1c1e23;
+  border: 1px solid var(--line);
+  border-right: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+button.snip-line-x {
+  flex: none;
+  font-size: 10px;
+  padding: 0 8px;
+  border-radius: 0 5px 5px 0;
+  border: 1px solid var(--line);
+  background: #1c1e23;
+  color: var(--dim);
+}
+button.snip-line:hover, button.snip-line-x:hover { background: #24262c; }
+button.snip-line-x:hover { color: #ee7a76; }
+.snip-row.cued > button { border-color: var(--green); }
+.snip-row.cued > button.snip-line { box-shadow: inset 3px 0 0 var(--green); }
+button.snip-line.snip-save {
+  border-radius: 5px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--dim);
+}
+button.snip-line.snip-save:hover { color: var(--text); background: transparent; }
+
 /* ------------------------------------------------------- simple mode */
 
 /* SIMPLE keeps the preview, SHOW/HIDE and the text boxes — nothing else.

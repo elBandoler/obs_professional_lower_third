@@ -1,6 +1,6 @@
 {
   "name": "obs-lower-thirds",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "private": true,
   "description": "Broadcast-style animated lower thirds for OBS with a preview/program (take-on-transition) workflow.",
   "main": "server.js",
