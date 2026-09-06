@@ -438,6 +438,89 @@ static double fullHeightSlot(const json &els)
 	return firstFull - 0.5;
 }
 
+/* A full-height element moving sideways (dir -1 left, +1 right): swap with
+   the next full-height element, or hop past the whole block of bar columns.
+   Mirror of moveFullSideways in server.js. */
+static void moveFullSideways(json &els, const std::string &id, int dir)
+{
+	json *me = nullptr;
+	for (auto &o : els)
+		if (o.value("id", "") == id) me = &o;
+	if (!me)
+		return;
+	double col = (*me)["place"].value("col", 0.0);
+	std::vector<double> cols;
+	for (auto &o : els) {
+		if (o.value("id", "") == id) continue;
+		double c = o["place"].value("col", 0.0);
+		if (std::find(cols.begin(), cols.end(), c) == cols.end()) cols.push_back(c);
+	}
+	std::sort(cols.begin(), cols.end());
+	bool found = false;
+	double next = 0;
+	if (dir > 0) {
+		for (double c : cols) if (c > col) { next = c; found = true; break; }
+	} else {
+		for (auto it = cols.rbegin(); it != cols.rend(); ++it) if (*it < col) { next = *it; found = true; break; }
+	}
+	if (!found)
+		return;
+	bool allFull = true;
+	for (auto &o : els) {
+		if (o.value("id", "") == id) continue;
+		if (o["place"].value("col", 0.0) == next && !o["place"].value("spanAll", false)) allFull = false;
+	}
+	if (allFull) {
+		for (auto &o : els) {
+			if (o.value("id", "") == id) continue;
+			if (o["place"].value("col", 0.0) == next) o["place"]["col"] = col;
+		}
+		(*me)["place"]["col"] = next;
+		return;
+	}
+	double edge = next;
+	auto hasBar = [&](double c) {
+		for (auto &o : els) {
+			if (o.value("id", "") == id) continue;
+			if (o["place"].value("col", 0.0) == c && !o["place"].value("spanAll", false)) return true;
+		}
+		return false;
+	};
+	if (dir > 0) {
+		for (double c : cols) { if (c < next) continue; if (hasBar(c)) edge = c; else break; }
+	} else {
+		for (auto it = cols.rbegin(); it != cols.rend(); ++it) { if (*it > next) continue; if (hasBar(*it)) edge = *it; else break; }
+	}
+	(*me)["place"]["col"] = edge + dir * 0.5;
+}
+
+/* the full-height elements in slot order, the moved one placed at index among
+   them. Mirror of orderFullGroup in server.js. */
+static void orderFullGroup(json &els, const std::string &id, int index)
+{
+	std::vector<json *> group;
+	std::vector<double> slots;
+	json *me = nullptr;
+	for (auto &o : els) {
+		if (!o["place"].value("spanAll", false)) continue;
+		slots.push_back(o["place"].value("col", 0.0));
+		if (o.value("id", "") == id) me = &o; else group.push_back(&o);
+	}
+	if (!me)
+		return;
+	std::sort(slots.begin(), slots.end());
+	std::sort(group.begin(), group.end(), [](json *a, json *b) {
+		double ac = (*a)["place"].value("col", 0.0), bc = (*b)["place"].value("col", 0.0);
+		if (ac != bc) return ac < bc;
+		return (*a)["place"].value("order", 0.0) < (*b)["place"].value("order", 0.0);
+	});
+	if (index < 0) index = 0;
+	if (index > (int)group.size()) index = (int)group.size();
+	group.insert(group.begin() + index, me);
+	for (size_t i = 0; i < group.size() && i < slots.size(); i++)
+		(*group[i])["place"]["col"] = slots[i];
+}
+
 void LtState::normalizePlacement(json &els)
 {
 	/* read as double: element-reorder deliberately parks a dropped element
@@ -1502,17 +1585,10 @@ void LtState::handleClientMessage(const json &msg)
 				*e = n;
 				/* Full height lands in a column of its own; mirror of server.js */
 				if (n["place"].value("spanAll", false) && !wasFull) {
-					double col = n["place"].value("col", 0.0);
 					json others = json::array();
-					bool shared = false;
-					for (const auto &o : st["pending"]["elements"]) {
-						if (o.value("id", "") == id) continue;
-						others.push_back(o);
-						if (!o["place"].value("spanAll", false) && o["place"].value("col", 0.0) == col)
-							shared = true;
-					}
-					if (shared)
-						(*e)["place"]["col"] = fullHeightSlot(others);
+					for (const auto &o : st["pending"]["elements"])
+						if (o.value("id", "") != id) others.push_back(o);
+					(*e)["place"]["col"] = fullHeightSlot(others);
 				}
 				normalizePlacement(st["pending"]["elements"]);
 				pushPendingLocked();
@@ -1525,8 +1601,12 @@ void LtState::handleClientMessage(const json &msg)
 			json &pl = (*e)["place"];
 			if (dir == "up") pl["row"] = pl["row"].get<int>() - 1;
 			else if (dir == "down") pl["row"] = pl["row"].get<int>() + 1;
-			else if (dir == "left") pl["col"] = pl["col"].get<int>() - 1;
-			else if (dir == "right") pl["col"] = pl["col"].get<int>() + 1;
+			else if (dir == "left" || dir == "right") {
+				if (pl.value("spanAll", false))
+					moveFullSideways(st["pending"]["elements"], (*e).value("id", ""), dir == "right" ? 1 : -1);
+				else
+					pl["col"] = pl["col"].get<int>() + (dir == "right" ? 1 : -1);
+			}
 			else if (dir == "first") pl["order"] = pl["order"].get<double>() - 1.5;
 			else if (dir == "last") pl["order"] = pl["order"].get<double>() + 1.5;
 
@@ -1591,7 +1671,18 @@ void LtState::handleClientMessage(const json &msg)
 			};
 
 			if (toFull) {
-				(*e)["place"]["spanAll"] = true;
+				/* into the FULL HEIGHT group: a slot beside the logo if it
+				   was a bar, then the requested position among them */
+				if (!(*e)["place"].value("spanAll", false)) {
+					(*e)["place"]["spanAll"] = true;
+					json others = json::array();
+					for (const auto &o : st["pending"]["elements"])
+						if (o.value("id", "") != movedId) others.push_back(o);
+					(*e)["place"]["col"] = fullHeightSlot(others);
+					normalizePlacement(st["pending"]["elements"]);
+					e = findElement(movedId);
+				}
+				orderFullGroup(st["pending"]["elements"], movedId, index);
 			} else if (sameRow) {
 				std::vector<json *> all = rowMembers(true);
 				std::vector<std::pair<double, double>> slots;

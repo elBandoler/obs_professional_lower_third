@@ -340,6 +340,38 @@ function fullHeightSlot(els) {
   return fulls[0].place.col - 0.5;
 }
 
+/* A full-height element moving sideways (dir -1 left, +1 right): swap with
+   the next full-height element, or hop past the whole block of bar columns —
+   never into one, where it would sit on top of the bars. */
+function moveFullSideways(els, el, dir) {
+  const col = el.place.col;
+  const others = els.filter((e) => e !== el);
+  const cols = Array.from(new Set(others.map((e) => e.place.col))).sort((a, b) => a - b);
+  const next = dir > 0 ? cols.filter((c) => c > col)[0] : cols.filter((c) => c < col).slice(-1)[0];
+  if (next === undefined) return;
+  const there = others.filter((e) => e.place.col === next);
+  if (there.every((e) => e.place.spanAll)) {
+    there.forEach((e) => { e.place.col = col; });
+    el.place.col = next;
+    return;
+  }
+  let edge = next;
+  const run = dir > 0 ? cols.filter((c) => c >= next) : cols.filter((c) => c <= next).reverse();
+  for (const c of run) {
+    if (others.some((e) => e.place.col === c && !e.place.spanAll)) edge = c; else break;
+  }
+  el.place.col = edge + dir * 0.5;
+}
+
+/* the full-height elements in slot order, el placed at index among them */
+function orderFullGroup(els, el, index) {
+  const group = els.filter((e) => e.place.spanAll && e !== el)
+    .sort((a, b) => (a.place.col - b.place.col) || (a.place.order - b.place.order));
+  const slots = els.filter((e) => e.place.spanAll).map((e) => e.place.col).sort((a, b) => a - b);
+  group.splice(Math.max(0, Math.min(index, group.length)), 0, el);
+  group.forEach((e, i) => { if (slots[i] !== undefined) e.place.col = slots[i]; });
+}
+
 function normalizePlacement(els) {
   function compact(key) {
     const used = Array.from(new Set(els.map(function (e) { return e.place[key]; })))
@@ -918,8 +950,7 @@ function handleMessage(client, msg) {
       /* Full height lands in a column of its own. Left in the column it had,
          a full-height element sat on top of the bars in that column. */
       if (upd.place.spanAll && !el.place.spanAll) {
-        const others = state.pending.elements.filter((e) => e !== upd);
-        if (others.some((e) => !e.place.spanAll && e.place.col === upd.place.col)) upd.place.col = fullHeightSlot(others);
+        upd.place.col = fullHeightSlot(state.pending.elements.filter((e) => e !== upd));
       }
       normalizePlacement(state.pending.elements);
       pushPending();
@@ -931,8 +962,10 @@ function handleMessage(client, msg) {
       const dir = msg.dir;
       if (dir === 'up') el.place.row -= 1;
       else if (dir === 'down') el.place.row += 1;
-      else if (dir === 'left') el.place.col -= 1;
-      else if (dir === 'right') el.place.col += 1;
+      else if (dir === 'left' || dir === 'right') {
+        if (el.place.spanAll) moveFullSideways(state.pending.elements, el, dir === 'right' ? 1 : -1);
+        else el.place.col += (dir === 'right' ? 1 : -1);
+      }
       else if (dir === 'first') el.place.order -= 1.5;   // earlier inside its cell
       else if (dir === 'last') el.place.order += 1.5;
       if (el.place.row < 0) {
@@ -970,7 +1003,14 @@ function handleMessage(client, msg) {
         .sort(byPos);
 
       if (toFull) {
-        el.place.spanAll = true;
+        /* into the FULL HEIGHT group: a slot beside the logo if it was a bar,
+           then the requested position among the full-height elements */
+        if (!el.place.spanAll) {
+          el.place.spanAll = true;
+          el.place.col = fullHeightSlot(state.pending.elements.filter((e) => e !== el));
+          normalizePlacement(state.pending.elements);
+        }
+        orderFullGroup(state.pending.elements, el, index);
       } else if (sameRow) {
         const slots = state.pending.elements
           .filter((e) => !e.place.spanAll && e.place.row === targetRow)

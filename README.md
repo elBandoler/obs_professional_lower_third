@@ -309,8 +309,10 @@ Both work in the Node fallback too.
   transparent shapes nothing. The **＋ chevron** band has this on from the start. An image
   element needs a *Min width* to have a size at all. After HIDE and SHOW the cuts are put
   back once the entrance has finished.
-- **Full height** now moves an element into a column of its own when the column it sat in
-  is shared with a row element; before, it stayed put and drew on top of the bars there.
+- **Full height** puts the element in a column of its own beside the logo (on the bars'
+  side). To move a full-height element sideways use ◀ ▶ on its PLACE tab — it swaps with
+  the next full-height element or hops past the bars, never into their column — or drag
+  it in the FULL HEIGHT list to reorder the full-height elements.
 - **Space before / Space after** (PLACE tab): extra room on either side of one element, in
   reading order, on top of the look's *Gap* (LAYOUT & POSITION). Use it to separate a
   chevron or a logo from its neighbours; bars shaped around a chevron follow it.
