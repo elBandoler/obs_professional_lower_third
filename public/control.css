@@ -621,6 +621,10 @@ button.snip-x:hover { color: #ee7a76; }
 button.snip-save { background: transparent; border-style: dashed; color: var(--dim); }
 button.snip-save:hover { color: var(--text); }
 
+.preset-io-row { display: flex; gap: 6px; margin: 8px 0 4px 0; }
+.preset-io-note { font-size: 11px; color: var(--dim); margin: 0 0 6px 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.preset-io-note code { font-size: 11px; color: var(--text); word-break: break-all; }
+
 .simple-block {
   border: 1px solid var(--line);
   border-radius: 7px;

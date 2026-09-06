@@ -363,6 +363,51 @@ int LtServer::apiHandler(struct mg_connection *conn, void *cbdata)
 		return 200;
 	}
 
+	/* presets as a file: presets.json for a real browser's download,
+	   presets/export writes into the data folder (the OBS dock cannot
+	   download), presets/import merges a file back in */
+	if (act == "presets.json") {
+		std::string body = st->exportPresets(nullptr).dump(2, ' ', false, json::error_handler_t::replace);
+		mg_printf(conn,
+			  "HTTP/1.1 200 OK\r\n"
+			  "Content-Type: application/json; charset=utf-8\r\n"
+			  "Content-Disposition: attachment; filename=\"lower-thirds-presets.json\"\r\n"
+			  "Cache-Control: no-store\r\n"
+			  "Access-Control-Allow-Origin: *\r\n"
+			  "Content-Length: %zu\r\n\r\n",
+			  body.size());
+		mg_write(conn, body.data(), body.size());
+		return 200;
+	}
+	if (act == "presets/export") {
+		std::string written;
+		json payload = st->exportPresets(&written);
+		if (written.empty()) {
+			send_json(conn, 500, {{"ok", false}, {"error", "Could not write the presets file into the data folder"}});
+			return 500;
+		}
+		send_json(conn, 200, {{"ok", true}, {"path", written}, {"count", (int)payload["presets"].size()}});
+		return 200;
+	}
+	if (act == "presets/import") {
+		if (method != "POST") {
+			send_json(conn, 405, {{"ok", false}, {"error", "POST a presets file"}});
+			return 405;
+		}
+		std::string body = read_body(conn, 8 * 1024 * 1024);
+		json parsed;
+		try {
+			parsed = json::parse(body);
+		} catch (const std::exception &) {
+			send_json(conn, 400, {{"ok", false}, {"error", "Not a JSON file"}});
+			return 400;
+		}
+		json result = st->importPresets(parsed);
+		int code = result.value("ok", false) ? 200 : 400;
+		send_json(conn, code, result);
+		return code;
+	}
+
 	if (act == "pending") {
 		json patch = json::object();
 		if (method == "POST") {

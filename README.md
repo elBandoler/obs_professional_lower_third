@@ -256,6 +256,16 @@ Advanced sections:
 
 Hebrew/Arabic content is auto-detected (or force RTL) and the whole layout mirrors properly.
 
+### Preset files
+
+Under **PRESETS** (ADVANCED view), **⤓ export all** writes every preset to a JSON file in
+the plugin's data folder and shows the path with a copy button — the dock cannot download
+a file itself, because OBS's browser has no download handler. **⬆ import…** adds the
+presets from such a file: entries you already have (same name and content) are skipped,
+and ids that collide get fresh ones, so importing the same file twice changes nothing.
+In a normal browser, `http://127.0.0.1:3620/api/presets.json` downloads the same file.
+Both work in the Node fallback too.
+
 ## 5. Hotkeys / Stream Deck / automation
 
 Any tool that can hit a URL can drive it:

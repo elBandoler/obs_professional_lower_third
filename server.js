@@ -430,6 +430,55 @@ function migrateLook(look) {
   };
 }
 
+/* ---- preset files ---- */
+const PKG_VERSION = (() => { try { return require('./package.json').version; } catch (e) { return '0'; } })();
+
+function presetsExportPayload() {
+  return {
+    obsLowerThirds: 'presets',
+    version: PKG_VERSION,
+    exportedAt: new Date().toISOString(),
+    presets: clone(state.presets),
+  };
+}
+
+/* a preset's content, for telling "already have this one" from "new" */
+function presetFingerprint(p) {
+  return JSON.stringify([p.name, p.elements, p.style, p.anim]);
+}
+
+/* Accepts the export payload, a bare array of presets, or one preset.
+   Every entry goes through the same migration as a saved preset; entries that
+   are already present (same name and content) are skipped, and an id that
+   collides with an existing preset gets a fresh one. */
+function importPresets(input) {
+  let list = null;
+  if (input && typeof input === 'object' && Array.isArray(input.presets)) list = input.presets;
+  else if (Array.isArray(input)) list = input;
+  else if (input && typeof input === 'object' && (Array.isArray(input.elements) || input.style)) list = [input];
+  if (!list) return { ok: false, error: 'No presets in that file' };
+  const have = new Set(state.presets.map(presetFingerprint));
+  const ids = new Set(state.presets.map((p) => p.id));
+  let imported = 0, skipped = 0;
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') { skipped++; continue; }
+    let p;
+    try { p = migratePreset(raw); } catch (e) { skipped++; continue; }
+    if (!p || !Array.isArray(p.elements)) { skipped++; continue; }
+    if (have.has(presetFingerprint(p))) { skipped++; continue; }
+    if (!p.id || ids.has(p.id)) p.id = newId('p');
+    state.presets.push(p);
+    have.add(presetFingerprint(p));
+    ids.add(p.id);
+    imported++;
+  }
+  if (imported) {
+    persist();
+    broadcast({ type: 'presets', presets: state.presets });
+  }
+  return { ok: true, imported, skipped, count: state.presets.length };
+}
+
 function migratePreset(p) {
   if (!p || typeof p !== 'object') return null;
   const look = migrateLook(Array.isArray(p.elements)
@@ -1337,6 +1386,43 @@ async function handleApi(req, res, url) {
     else if (act === 'toggle') { state.visible ? doHide('api') : doShow('api'); }
     else if (act === 'revert') doRevert();
     return sendJson(res, 200, { ok: true, visible: state.visible, dirty: isDirty() });
+  }
+
+  /* presets as a file. GET /api/presets.json downloads it in a real browser;
+     /api/presets/export writes it into the data folder (the OBS dock cannot
+     download); POST /api/presets/import merges a file back in. */
+  if (act === 'presets.json') {
+    const raw = JSON.stringify(presetsExportPayload(), null, 2);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="lower-thirds-presets.json"',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return res.end(raw);
+  }
+  if (act === 'presets/export') {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '').replace('T', '-');
+    const file = path.join(DATA_DIR, 'presets-export-' + stamp + '.json');
+    try {
+      fs.writeFileSync(file, JSON.stringify(presetsExportPayload(), null, 2));
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: 'Could not write ' + file + ': ' + e.message });
+    }
+    return sendJson(res, 200, { ok: true, path: file, count: state.presets.length });
+  }
+  if (act === 'presets/import') {
+    if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST a presets file' });
+    let parsed;
+    try {
+      const body = await readBody(req, 8 * 1024 * 1024);
+      parsed = JSON.parse(body.toString('utf8') || 'null');
+    } catch (e) {
+      return sendJson(res, 400, { ok: false, error: 'Not a JSON file' });
+    }
+    const result = importPresets(parsed);
+    if (!result.ok) return sendJson(res, 400, result);
+    return sendJson(res, 200, result);
   }
 
   if (act === 'pending') {

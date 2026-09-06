@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <ctime>
 #include <fstream>
 #include <map>
 #include <random>
+#include <set>
 #include <sstream>
 #include <thread>
 #include <stdexcept>
@@ -812,6 +814,116 @@ void LtState::loadLocked()
 		lt_log("could not read saved state (starting fresh): %s%s", e.what(),
 		       ec ? "" : (" A copy was kept at " + bak.string()).c_str());
 	}
+}
+
+/* ---- preset files ---- */
+
+static std::string isoNow()
+{
+	std::time_t t = std::time(nullptr);
+	std::tm tm{};
+#ifdef _WIN32
+	gmtime_s(&tm, &t);
+#else
+	gmtime_r(&t, &tm);
+#endif
+	char buf[32];
+	std::strftime(buf, sizeof buf, "%Y-%m-%dT%H:%M:%SZ", &tm);
+	return buf;
+}
+
+static std::string presetFingerprint(const json &p)
+{
+	json key = json::array({p.value("name", ""), p.value("elements", json::array()),
+	                        p.value("style", json::object()), p.value("anim", json::object())});
+	return key.dump(-1, ' ', false, json::error_handler_t::replace);
+}
+
+nlohmann::json LtState::exportPresets(std::string *writtenPath)
+{
+	std::lock_guard<std::recursive_mutex> lk(mtx);
+	json out = {{"obsLowerThirds", "presets"},
+	            {"version", LT_VERSION},
+	            {"exportedAt", isoNow()},
+	            {"presets", st["presets"]}};
+	if (writtenPath) {
+		writtenPath->clear();
+		std::time_t t = std::time(nullptr);
+		std::tm tm{};
+#ifdef _WIN32
+		localtime_s(&tm, &t);
+#else
+		localtime_r(&t, &tm);
+#endif
+		char stamp[32];
+		std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", &tm);
+		fs::path f = fs::path(dir) / (std::string("presets-export-") + stamp + ".json");
+		std::ofstream o(f, std::ios::binary | std::ios::trunc);
+		if (o) {
+			o << out.dump(2, ' ', false, json::error_handler_t::replace);
+			o.flush();
+			o.close();
+		}
+		if (o)
+			*writtenPath = f.string();
+		else
+			lt_log("preset export: could not write %s", f.string().c_str());
+	}
+	return out;
+}
+
+/* Accepts the export payload, a bare array of presets, or one preset. Every
+   entry goes through the same migration as a saved preset; entries already
+   present (same name and content) are skipped, and an id that collides with
+   an existing preset gets a fresh one. Mirrors importPresets in server.js. */
+nlohmann::json LtState::importPresets(const json &input)
+{
+	const json *list = nullptr;
+	json single;
+	if (input.is_object() && input.contains("presets") && input["presets"].is_array())
+		list = &input["presets"];
+	else if (input.is_array())
+		list = &input;
+	else if (input.is_object() && ((input.contains("elements") && input["elements"].is_array()) || input.contains("style"))) {
+		single = json::array({input});
+		list = &single;
+	}
+	if (!list)
+		return {{"ok", false}, {"error", "No presets in that file"}};
+
+	std::lock_guard<std::recursive_mutex> lk(mtx);
+	if (!st.contains("presets") || !st["presets"].is_array())
+		st["presets"] = json::array();
+	std::set<std::string> have, ids;
+	for (const auto &p : st["presets"]) {
+		have.insert(presetFingerprint(p));
+		ids.insert(p.value("id", ""));
+	}
+	int imported = 0, skipped = 0;
+	for (const auto &raw : *list) {
+		if (!raw.is_object()) { skipped++; continue; }
+		json p;
+		try {
+			p = migratePreset(raw);
+		} catch (const std::exception &) { skipped++; continue; }
+		if (!p.is_object() || !p.contains("elements") || !p["elements"].is_array()) { skipped++; continue; }
+		std::string fp = presetFingerprint(p);
+		if (have.count(fp)) { skipped++; continue; }
+		std::string id = p.value("id", "");
+		if (id.empty() || ids.count(id)) {
+			id = newId("p");
+			p["id"] = id;
+		}
+		st["presets"].push_back(p);
+		have.insert(fp);
+		ids.insert(id);
+		imported++;
+	}
+	if (imported) {
+		scheduleSaveLocked();
+		broadcastJson({{"type", "presets"}, {"presets", st["presets"]}});
+	}
+	return {{"ok", true}, {"imported", imported}, {"skipped", skipped}, {"count", (int)st["presets"].size()}};
 }
 
 void LtState::saveNowLocked()

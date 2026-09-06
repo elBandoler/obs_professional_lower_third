@@ -1841,6 +1841,64 @@
     saveRow.appendChild(saveBtn);
     body.appendChild(saveRow);
 
+    /* presets as a file. The dock cannot download (OBS's browser has no
+       download handler), so export asks the server to write the file into
+       its data folder and shows where; import uses the same file picker the
+       logo and font uploads use. */
+    var io = el('div', 'preset-io-row');
+    var exp = el('button', null, '⤓ export all');
+    exp.title = 'Write every preset to a JSON file in the data folder';
+    var imp = el('button', null, '⬆ import…');
+    imp.title = 'Add the presets from a JSON file (ones you already have are skipped)';
+    var file = el('input');
+    file.type = 'file';
+    file.accept = '.json,application/json';
+    file.style.display = 'none';
+    io.appendChild(exp);
+    io.appendChild(imp);
+    io.appendChild(file);
+    body.appendChild(io);
+    var ioNote = el('div', 'preset-io-note');
+    body.appendChild(ioNote);
+    function showPath(prefix, p) {
+      ioNote.innerHTML = '';
+      ioNote.appendChild(el('span', null, prefix + ' '));
+      var code = el('code', null, p);
+      ioNote.appendChild(code);
+      var cp = el('button', 'mini', 'copy path');
+      cp.addEventListener('click', function () { copyText(p); cp.textContent = 'copied'; setTimeout(function () { cp.textContent = 'copy path'; }, 1500); });
+      ioNote.appendChild(cp);
+    }
+    exp.addEventListener('click', function () {
+      exp.disabled = true;
+      fetch('/api/presets/export', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.ok) showPath('Exported ' + j.count + ' preset' + (j.count === 1 ? '' : 's') + ' to', j.path);
+          else uploadNote(j.error || 'Export failed');
+        })
+        .catch(function () { uploadNote('Export failed'); })
+        .then(function () { exp.disabled = false; });
+    });
+    imp.addEventListener('click', function () { file.click(); });
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      file.value = '';
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        fetch('/api/presets/import', { method: 'POST', body: rd.result, headers: { 'Content-Type': 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j.ok) { uploadNote(j.error || 'Import failed'); return; }
+            ioNote.textContent = 'Imported ' + j.imported + ' preset' + (j.imported === 1 ? '' : 's') +
+              (j.skipped ? ' · ' + j.skipped + ' already here' : '') + ' — ' + j.count + ' in the list now';
+          })
+          .catch(function () { uploadNote('Import failed'); });
+      };
+      rd.readAsText(f);
+    });
+
     var restore = el('button', 'link-btn', 'restore built-in presets');
     restore.addEventListener('click', function () { send({ type: 'preset-restore' }); });
     body.appendChild(restore);
@@ -1899,6 +1957,7 @@
       { l: 'Program overlay (browser source)', u: location.origin + '/overlay' },
       { l: 'Big preview — open in a BROWSER window, never as an OBS source', u: location.origin + '/overlay?role=preview' },
       { l: 'Control panel', u: location.origin + '/control' },
+      { l: 'Presets as a file (open in a browser)', u: location.origin + '/api/presets.json' },
       { l: 'Hotkey: take', u: location.origin + '/api/take' },
       { l: 'Hotkey: show', u: location.origin + '/api/show' },
       { l: 'Hotkey: hide', u: location.origin + '/api/hide' },

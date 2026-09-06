@@ -16,6 +16,8 @@
  *   live    -> what is on air (program)
  * TAKE / SHOW commit pending -> live and broadcast to all websocket clients.
  */
+#define LT_VERSION "1.6.3"
+
 class LtState {
 public:
 	using BroadcastFn = std::function<void(const std::string &text, const char *roleFilter)>;
@@ -45,6 +47,11 @@ public:
 	int serverPort();
 
 	void flushSave();
+
+	/* presets as a file: the export payload (and, with a path out, the file
+	   written into the data folder); import merges a payload back in */
+	nlohmann::json exportPresets(std::string *writtenPath);
+	nlohmann::json importPresets(const nlohmann::json &input);
 
 private:
 	static nlohmann::json defaultsLook();
