@@ -54,7 +54,7 @@ static std::map<std::string, std::string> parse_query(const char *qs)
 
 static void send_json(struct mg_connection *conn, int code, const json &obj)
 {
-	std::string body = obj.dump();
+	std::string body = obj.dump(-1, ' ', false, json::error_handler_t::replace);
 	mg_printf(conn,
 		  "HTTP/1.1 %d %s\r\n"
 		  "Content-Type: application/json; charset=utf-8\r\n"

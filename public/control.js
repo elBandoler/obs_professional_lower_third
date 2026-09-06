@@ -873,6 +873,13 @@
     return { node: wrap, sync: render };
   }
 
+  /* the first n UTF-16 units, never ending on the high half of a surrogate
+     pair: a split emoji is a lone surrogate the plugin's parser rejects */
+  function cutChars(s, n) {
+    var out = String(s).slice(0, n);
+    return /[\uD800-\uDBFF]$/.test(out) ? out.slice(0, -1) : out;
+  }
+
   function buildSnippets(elem, compact) {
     var id = elem.id;
     var wrap = el('div', 'snip-wrap');
@@ -910,7 +917,7 @@
         var cur = findEl(id);
         var text = (cur && cur.text) || '';
         if (!text.trim()) return;
-        send({ type: 'snippet-save', id: id, label: text.slice(0, 40), text: text });
+        send({ type: 'snippet-save', id: id, label: cutChars(text, 40), text: text });
       });
       list.appendChild(save);
       wrap.appendChild(list);

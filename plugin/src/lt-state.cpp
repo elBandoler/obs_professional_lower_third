@@ -204,6 +204,21 @@ static json strOr(const json &o, const char *k, const char *dflt)
 	return json(dflt);
 }
 
+/* Cut a UTF-8 string to at most maxBytes WITHOUT splitting a character. A cut
+   inside a multi-byte sequence leaves invalid UTF-8, which the JSON serialiser
+   rejects - and once such a label sits in the state, every later broadcast and
+   state write fails with it. Hebrew is two bytes a letter, so a 40-character
+   label is up to 80 bytes and the 60-byte cap lands mid-letter often. */
+static std::string utf8Cut(const std::string &s, size_t maxBytes)
+{
+	if (s.size() <= maxBytes)
+		return s;
+	size_t n = maxBytes;
+	while (n > 0 && (static_cast<unsigned char>(s[n]) & 0xC0) == 0x80)
+		--n;
+	return s.substr(0, n);
+}
+
 json LtState::normalizeElement(const json &in)
 {
 	if (!in.is_object())
@@ -602,7 +617,7 @@ json LtState::migratePreset(const json &p)
 	if (pname.empty())
 		pname = "Preset";
 	if (pname.size() > 60)
-		pname = pname.substr(0, 60);
+		pname = utf8Cut(pname, 60);
 	out["name"] = pname;
 	out["schema"] = 2;
 	out["elements"] = look["elements"];
@@ -804,7 +819,7 @@ void LtState::saveNowLocked()
 	try {
 		fs::path f = fs::path(dir) / "state.json";
 		fs::path tmp = fs::path(dir) / "state.json.tmp";
-		std::string body = st.dump(2);
+		std::string body = st.dump(2, ' ', false, json::error_handler_t::replace);
 
 		/* Write and VERIFY before replacing anything. An ofstream reports
 		   failure only through its state flags, so an unchecked write (full
@@ -961,13 +976,13 @@ std::string LtState::helloText(const json &counts)
 	msg["state"] = publicState();
 	msg["obs"] = obsStatusPayload();
 	msg["counts"] = counts;
-	return msg.dump();
+	return msg.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 void LtState::broadcastJson(const json &msg, const char *role)
 {
 	if (bfn)
-		bfn(msg.dump(), role);
+		bfn(msg.dump(-1, ' ', false, json::error_handler_t::replace), role);
 }
 
 /* -------------------------------------------------------------- actions */
@@ -1073,8 +1088,8 @@ json LtState::sanitizeSnippetStore(const json &raw, const std::vector<std::strin
 				? sn["label"].get<std::string>() : std::string();
 			std::string text = sn.contains("text") && sn["text"].is_string()
 				? sn["text"].get<std::string>() : std::string();
-			if (label.size() > 60) label = label.substr(0, 60);
-			if (text.size() > 4000) text = text.substr(0, 4000);
+			if (label.size() > 60) label = utf8Cut(label, 60);
+			if (text.size() > 4000) text = utf8Cut(text, 4000);
 			o["label"] = label;
 			o["text"] = text;
 			clean.push_back(o);
@@ -1462,8 +1477,8 @@ void LtState::handleClientMessage(const json &msg)
 			if (!blank) {
 				std::string label = msg.contains("label") && msg["label"].is_string()
 					? msg["label"].get<std::string>() : text;
-				if (label.size() > 60) label = label.substr(0, 60);
-				if (text.size() > 4000) text = text.substr(0, 4000);
+				if (label.size() > 60) label = utf8Cut(label, 60);
+				if (text.size() > 4000) text = utf8Cut(text, 4000);
 				std::string eid = (*e).value("id", "");
 				json &list = snippetsForLocked(eid);
 				json sn;
@@ -1512,7 +1527,7 @@ void LtState::handleClientMessage(const json &msg)
 			for (auto &sn : st["snippets"][eid]) {
 				if (sn.value("id", "") == sid) {
 					std::string lbl = msg.value("label", sn.value("label", ""));
-					if (lbl.size() > 60) lbl = lbl.substr(0, 60);
+					if (lbl.size() > 60) lbl = utf8Cut(lbl, 60);
 					sn["label"] = lbl;
 					pushSnippetsLocked();
 					break;
