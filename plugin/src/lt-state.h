@@ -16,7 +16,7 @@
  *   live    -> what is on air (program)
  * TAKE / SHOW commit pending -> live and broadcast to all websocket clients.
  */
-#define LT_VERSION "1.6.6"
+#define LT_VERSION "1.6.7"
 
 class LtState {
 public:

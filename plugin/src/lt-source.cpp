@@ -27,7 +27,9 @@ static const char *lt_src_get_name(void *)
 static void lt_src_apply(struct lt_source *s, obs_data_t *settings)
 {
 	char url[256];
-	snprintf(url, sizeof(url), "http://127.0.0.1:%d/overlay", lt_server_port());
+	/* w/h: the page lays out at this size and scales to the source, so page
+	   zoom (shared per host with the dock) cannot change what is drawn */
+	snprintf(url, sizeof(url), "http://127.0.0.1:%d/overlay?w=1920&h=1080", lt_server_port());
 
 	obs_data_t *cs = obs_data_create();
 	obs_data_set_string(cs, "url", url);

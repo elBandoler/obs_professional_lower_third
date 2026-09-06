@@ -1966,7 +1966,7 @@
 
     body.appendChild(el('div', 'subhead', 'URLS & API'));
     [
-      { l: 'Program overlay (browser source)', u: location.origin + '/overlay' },
+      { l: 'Program overlay (browser source)', u: location.origin + '/overlay?w=1920&h=1080' },
       { l: 'Big preview — open in a BROWSER window, never as an OBS source', u: location.origin + '/overlay?role=preview' },
       { l: 'Control panel', u: location.origin + '/control' },
       { l: 'Presets as a file (open in a browser)', u: location.origin + '/api/presets.json' },
@@ -2164,7 +2164,7 @@
     b.addEventListener('click', function () {
       document.querySelectorAll('.pv-bg').forEach(function (x) { x.classList.remove('active'); });
       b.classList.add('active');
-      $('#preview-frame').src = '/overlay?role=preview&label=off&bg=' + b.dataset.bg;
+      $('#preview-frame').src = '/overlay?role=preview&label=off&w=1920&h=1080&bg=' + b.dataset.bg;
     });
   });
   var defBg = document.querySelector('.pv-bg[data-bg="checker"]');

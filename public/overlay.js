@@ -19,6 +19,40 @@
   if (SHOW_TAG) document.getElementById('pvw-tag').style.display = 'block';
 
   var stage = document.getElementById('stage');
+
+  /* A fixed design box. Chromium's page zoom is per HOST, so Ctrl+wheel in
+     the dock also zoomed this page inside the OBS source and the strap grew
+     on air. With ?w=&h= the stage is laid out at exactly that size and then
+     scaled to fit whatever viewport it actually has: zoom shrinks the
+     viewport's CSS pixels, the scale shrinks the stage by the same factor,
+     and the drawn result is identical. (A source of another size gets the
+     same design scaled to fit, which is a feature.) */
+  var DESIGN_W = parseInt(qs.get('w'), 10) || 0;
+  var DESIGN_H = parseInt(qs.get('h'), 10) || 0;
+  var lastFit = null;
+  function fitStage() {
+    if (!(DESIGN_W > 0 && DESIGN_H > 0)) return;
+    var z = window.innerWidth / DESIGN_W;
+    if (!(z > 0) || !isFinite(z)) return;
+    var t = Math.abs(z - 1) < 0.0005 ? '' : 'scale(' + z.toFixed(5) + ')';
+    if (t === lastFit) return;
+    lastFit = t;
+    stage.style.transform = t;
+  }
+  if (DESIGN_W > 0 && DESIGN_H > 0) {
+    stage.style.left = '0';
+    stage.style.top = '0';
+    stage.style.right = 'auto';
+    stage.style.bottom = 'auto';
+    stage.style.width = DESIGN_W + 'px';
+    stage.style.height = DESIGN_H + 'px';
+    stage.style.transformOrigin = '0 0';
+    fitStage();
+    window.addEventListener('resize', fitStage);
+    /* zoom changes do not always arrive as a resize event; a cheap poll
+       (one string compare) keeps the stage honest regardless */
+    setInterval(fitStage, 500);
+  }
   var lt = document.getElementById('lt');
 
   var anim = null;      // animation settings

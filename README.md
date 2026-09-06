@@ -56,7 +56,7 @@ You'll see the URLs it serves:
 | Page | URL | Use |
 |---|---|---|
 | Control panel | `http://127.0.0.1:3620/control` | OBS custom browser dock |
-| Program overlay | `http://127.0.0.1:3620/overlay` | Browser source in your scenes |
+| Program overlay | `http://127.0.0.1:3620/overlay?w=1920&h=1080` | Browser source in your scenes (`w`/`h` = the source size) |
 | Preview mirror | `http://127.0.0.1:3620/overlay?role=preview` | Open in a **normal browser window** only — never as an OBS source |
 
 ## 2. Set up OBS
@@ -69,7 +69,10 @@ commits changes. (The browser-source/dock URLs below still work too if you prefe
 
 *Overlay (program):*
 1. In your scene: *Sources → + → Browser*, name it e.g. `Lower Third`.
-2. URL: `http://127.0.0.1:3620/overlay` — Width **1920**, Height **1080**.
+2. URL: `http://127.0.0.1:3620/overlay?w=1920&h=1080` — Width **1920**, Height **1080**. The
+   `w`/`h` in the URL are the size the page lays out at; keep them equal to the source size.
+   They are what keeps **page zoom in the dock** (Ctrl+wheel, Ctrl+plus) from touching the
+   overlay: OBS's browser zooms per host, and the dock and the overlay share one.
 3. Leave "Shutdown source when not visible" **off** so it stays connected.
 
 *Control dock:*
