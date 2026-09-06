@@ -1026,10 +1026,25 @@
       var n = nodes[id];
       if (n && n._fit) {
         n._fit = false;
+        n._cuts = null;
         n.box.style.clipPath = '';
         n.cell.style.zIndex = '';
       }
     });
+
+    /* One polygon per bar, with a cut on whichever ends were shaped: a bar
+       between two chevrons gets both. Each side records its cut; the
+       polygons are built once every chevron has had its say. */
+    function cutPolygon(cuts) {
+      var L = cuts.left, R = cuts.right, pts = [];
+      pts.push((L ? L.cTop + 'px' : '0') + ' 0');
+      pts.push((R ? 'calc(100% - ' + R.cTop + 'px)' : '100%') + ' 0');
+      if (R && R.straddles) pts.push('calc(100% - ' + R.apex + 'px) ' + R.tip + '%');
+      pts.push((R ? 'calc(100% - ' + R.cBot + 'px)' : '100%') + ' 100%');
+      pts.push((L ? L.cBot + 'px' : '0') + ' 100%');
+      if (L && L.straddles) pts.push(L.apex + 'px ' + L.tip + '%');
+      return 'polygon(' + pts.join(', ') + ')';
+    }
 
     /* Shape the bars on one side of a full-height chevron F.
        side: 'point' — the bars receive F's point: cut concave, deepest at
@@ -1063,16 +1078,14 @@
         var straddles = yTop < half && yBot > half;
         var tip = ((tipTop + half - r.top) / r.height * 100).toFixed(3);
         var apex = side === 'point' ? c : 0;    /* the bar's edge at the middle */
-        var poly;
-        if (sideLeft) {   /* the bar is on F's left: cut its right end */
-          poly = 'polygon(0 0, calc(100% - ' + cTop + 'px) 0, ' + (straddles ? 'calc(100% - ' + apex + 'px) ' + tip + '%, ' : '') + 'calc(100% - ' + cBot + 'px) 100%, 0 100%)';
-        } else {          /* the bar is on F's right: cut its left end */
-          poly = 'polygon(' + cTop + 'px 0, 100% 0, 100% 100%, ' + cBot + 'px 100%' + (straddles ? ', ' + apex + 'px ' + tip + '%' : '') + ')';
-        }
-        n.box.style.clipPath = poly;
+        n._cuts = n._cuts || {};
+        /* the bar on F's left has its RIGHT end cut, and vice versa */
+        n._cuts[sideLeft ? 'right' : 'left'] = { cTop: cTop, cBot: cBot, apex: apex, tip: tip, straddles: straddles };
         var pullPx = -(c + inset) + (sideLeft ? sp.right : sp.left);
         if (sideLeft) n.cell.style.marginRight = pullPx + 'px'; else n.cell.style.marginLeft = pullPx + 'px';
-        n.cell.style.zIndex = side === 'point' ? '2' : '0';
+        /* above the chevron either way: its cut is exact, so a point it
+           fills shows the same as it would through the notch */
+        n.cell.style.zIndex = '2';
         var est = e.style || {};
         var padCut = ((est.padX || 0) + c) + 'px';
         if (sideLeft) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
@@ -1112,7 +1125,7 @@
         var inset = Math.max(0, pointLeft ? (tipX - rf.left) : (rf.right - tipX));
         nf.cell.style.zIndex = '1';
         shapeSide(f, nf, rf, 'point', pointLeft, c, inset, ri.top, ri.height);
-        return;
+        return;   /* (the polygons are built after the loop) */
       }
       /* a drawn chevron: chevron edges, and something to see — a band made
          fully transparent shapes nothing (the holes it left were the surprise) */
@@ -1136,6 +1149,10 @@
           else nf.cell.style.marginLeft = spF.left ? spF.left + 'px' : '';
         }
       }
+    });
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id];
+      if (n && n._cuts) n.box.style.clipPath = cutPolygon(n._cuts);
     });
   }
 
