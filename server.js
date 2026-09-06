@@ -117,7 +117,8 @@ function minimalDefaults() {
         kind: 'image', name: 'Image', enabled: true,
         place: { row: 0, order: 0, stretch: false, rowSpan: 1 },
         image: { url: '', fit: 'contain', scale: 1, sources: [],
-          rotate: { mode: 'off', everyMs: 8000, showMs: 6000, anim: 'fade', animMs: 450 } },
+          rotate: { mode: 'off', everyMs: 8000, showMs: 6000, anim: 'fade', animMs: 450 },
+          key: { mode: 'off', threshold: 0.1, softness: 0.2 } },
         style: deepMerge(clone(elStyle), { padX: 12, padY: 12, minWidth: 160, align: 'center' }),
         anim: { inStyle: 'inherit', inMs: 0, delayMs: 0, reactTo: '', reactStyle: 'flick', reactMs: 400, cover: true },
       },
@@ -281,6 +282,16 @@ function normalizeElement(el) {
     };
     /* nothing to rotate to means nothing rotates, whatever the mode says */
     if (!img.sources.length) img.rotate.mode = 'off';
+    /* key out black: alpha = clamp((brightness - threshold) / softness).
+       Three decimals, so both engines store the identical number. */
+    const key = (img.key && typeof img.key === 'object') ? img.key : {};
+    const fnum = (v, dflt) => (typeof v === 'number' && isFinite(v) ? v : dflt);
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    img.key = {
+      mode: key.mode === 'black' ? 'black' : 'off',
+      threshold: Math.max(0, Math.min(0.9, r3(fnum(key.threshold, 0.1)))),
+      softness: Math.max(0.01, Math.min(1, r3(fnum(key.softness, 0.2)))),
+    };
     delete out.text;
     delete out.snippets;
   }

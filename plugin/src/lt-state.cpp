@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <cmath>
 #include <ctime>
 #include <fstream>
 #include <map>
@@ -49,7 +50,8 @@ static json minimalDefaults()
 	    "image": { "kind": "image", "name": "Image", "enabled": true,
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
 	      "image": { "url": "", "fit": "contain", "scale": 1, "sources": [],
-	        "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 } },
+	        "rotate": { "mode": "off", "everyMs": 8000, "showMs": 6000, "anim": "fade", "animMs": 450 },
+	        "key": { "mode": "off", "threshold": 0.1, "softness": 0.2 } },
 	      "anim": { "inStyle": "inherit", "inMs": 0, "delayMs": 0, "reactTo": "", "reactStyle": "flick", "reactMs": 400, "cover": true },
 	      "style": { "bg": "#ffffff", "bgOpacity": 1, "color": "#12161c", "size": 56, "weight": 700,
 	        "letterSpacing": 0, "padX": 12, "padY": 12, "lineHeight": 1.2, "align": "center",
@@ -355,6 +357,21 @@ json LtState::normalizeElement(const json &in)
 			{ "anim", ranim },
 			{ "animMs", clampInt(numOr(rot, "animMs", 450), 0, 4000) },
 		};
+		/* key out black: alpha = clamp((brightness - threshold) / softness).
+		   Three decimals, so both engines store the identical number. */
+		json key = (img.contains("key") && img["key"].is_object()) ? img["key"] : json::object();
+		std::string kmode = (key.contains("mode") && key["mode"].is_string())
+		                            ? key["mode"].get<std::string>()
+		                            : "off";
+		if (kmode != "black")
+			kmode = "off";
+		auto fnum = [](const json &o, const char *k, double d) {
+			return (o.contains(k) && o[k].is_number()) ? o[k].get<double>() : d;
+		};
+		auto r3 = [](double v) { return std::round(v * 1000.0) / 1000.0; };
+		double thr = std::min(0.9, std::max(0.0, r3(fnum(key, "threshold", 0.1))));
+		double soft = std::min(1.0, std::max(0.01, r3(fnum(key, "softness", 0.2))));
+		img["key"] = json{ { "mode", kmode }, { "threshold", thr }, { "softness", soft } };
 		out.erase("text");
 		out.erase("snippets");
 	}

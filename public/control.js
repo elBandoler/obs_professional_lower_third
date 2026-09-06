@@ -1124,6 +1124,18 @@
         title: 'Size inside its box — give the element more room with padding or min width to make the picture bigger',
         get: function () { return dig(findEl(id) || {}, 'image.scale'); }, set: function (v) { sendEl(id, 'image.scale', v); } });
 
+      /* key out black: a switch and two sliders; the preview shows the result */
+      var keyed = function () { return dig(findEl(id) || {}, 'image.key.mode') === 'black'; };
+      add({ type: 'toggle', label: 'Key out black',
+        title: 'Make the dark background of a video or picture transparent: pixels darker than the threshold disappear, brighter ones stay',
+        get: keyed, set: function (v) { sendEl(id, 'image.key.mode', v ? 'black' : 'off'); } });
+      add({ type: 'slider', label: 'Key threshold', min: 0, max: 0.6, step: 0.01, unit: '%pct', showIf: keyed,
+        title: 'Brightness below which a pixel is fully transparent',
+        get: function () { return dig(findEl(id) || {}, 'image.key.threshold'); }, set: function (v) { sendEl(id, 'image.key.threshold', v); } });
+      add({ type: 'slider', label: 'Key softness', min: 0.01, max: 0.6, step: 0.01, unit: '%pct', showIf: keyed,
+        title: 'How wide the fade from transparent to opaque is: small for a hard edge, large for a gentle one',
+        get: function () { return dig(findEl(id) || {}, 'image.key.softness'); }, set: function (v) { sendEl(id, 'image.key.softness', v); } });
+
       var sf = buildShapeFit(e);
       addNode(sf.node);
       syncs.push(sf.sync);

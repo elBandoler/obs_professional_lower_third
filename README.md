@@ -172,6 +172,12 @@ Advanced sections:
     instead of animating.
   - Rotation is a display behaviour: it never edits your look, so the dock does not go
     "unsaved" every few seconds, and it pauses whenever the lower third is off air.
+  - **Key out black** — a switch on the image element makes the dark background of a
+    video or picture transparent: everything darker than *Key threshold* disappears, and
+    *Key softness* sets how wide the fade to fully opaque is (small for a hard edge). It is
+    a brightness key, so it suits logos and stings on black; a clip whose artwork itself
+    has black parts loses them too, and edges over black keep a faint dark fringe — a WebM
+    exported with real transparency is still the cleanest source.
   - Mix freely — a still main logo that flips to a video sting and back is just three
     entries and *Swap out, then return to main*.
 - **Motion (per element)** — every element card has a **MOTION** tab, so one element can

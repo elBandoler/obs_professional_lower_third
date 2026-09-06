@@ -307,6 +307,59 @@
     return v;
   }
 
+  /* Key out black. An SVG filter on the media node, so it runs on the GPU
+     for video and stills alike: alpha becomes the pixel's brightness (kept
+     inside the picture's own alpha), then a linear ramp turns everything
+     below the threshold transparent and everything above threshold+softness
+     opaque. One <filter> per element, parameters re-stamped on every sync. */
+  var keyDefs = null;
+  function keyFilterFor(e) {
+    var k = e.image && e.image.key;
+    if (!k || k.mode !== 'black') return '';
+    if (!keyDefs) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.style.position = 'absolute';
+      keyDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svg.appendChild(keyDefs);
+      document.body.appendChild(svg);
+    }
+    var fid = 'lt-key-' + e.id;
+    var f = document.getElementById(fid);
+    if (!f) {
+      var NS = 'http://www.w3.org/2000/svg';
+      f = document.createElementNS(NS, 'filter');
+      f.setAttribute('id', fid);
+      f.setAttribute('color-interpolation-filters', 'sRGB');
+      var cm = document.createElementNS(NS, 'feColorMatrix');
+      cm.setAttribute('type', 'matrix');
+      cm.setAttribute('values', '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0.2126 0.7152 0.0722 0 0');
+      cm.setAttribute('result', 'luma');
+      var comp = document.createElementNS(NS, 'feComposite');
+      comp.setAttribute('in', 'luma');
+      comp.setAttribute('in2', 'SourceGraphic');
+      comp.setAttribute('operator', 'in');
+      var ct = document.createElementNS(NS, 'feComponentTransfer');
+      var fa = document.createElementNS(NS, 'feFuncA');
+      fa.setAttribute('type', 'linear');
+      ct.appendChild(fa);
+      f.appendChild(cm); f.appendChild(comp); f.appendChild(ct);
+      keyDefs.appendChild(f);
+    }
+    var soft = Math.max(0.01, +k.softness || 0.2);
+    var thr = Math.max(0, +k.threshold || 0);
+    var fn = f.querySelector('feFuncA');
+    fn.setAttribute('slope', String(+(1 / soft).toFixed(6)));
+    fn.setAttribute('intercept', String(+(-thr / soft).toFixed(6)));
+    return 'url(#' + fid + ')';
+  }
+  function applyKey(e, node) {
+    if (!node) return;
+    var want = keyFilterFor(e);
+    if (node.style.filter !== want) node.style.filter = want;
+  }
+
   /* a <video> that is merely detached keeps decoding, so tear it down properly */
   function stopMedia(node) {
     if (!node) return;
@@ -336,6 +389,7 @@
        box would drag the outgoing logo to whatever the size is NOW; this way
        the outgoing node simply keeps the value it was built with. */
     next.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
+    applyKey(e, next);
     if (url) next.src = url;
 
     /* both branches must clear a swap in flight: a cut landing mid-cross-fade
@@ -732,6 +786,7 @@
       box.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
       n.img.style.setProperty('--img-scale', (e.image && e.image.scale) || 1);
       n.img.style.objectFit = (e.image && e.image.fit) || 'contain';
+      applyKey(e, n.img);
     }
     /* motion is not part of structureOf(), so a change to it arrives as a
        morph and has to be re-stamped here rather than at buildGrid */
