@@ -774,8 +774,14 @@
     /* Chevron segments have to overlap by one chamfer or the point never
        reaches its neighbour's notch and the seam shows the key through. The
        pull goes on the CELL: the box fills its cell, so a margin there would
-       just be absorbed by it growing again. */
-    cell.style.marginLeft = edgeMode === 'chevron' ? (-(edgeAmt || 0)) + 'px' : '';
+       just be absorbed by it growing again. It pulls toward the NOTCH — the
+       side the previous segment is on: left in a left-to-right ribbon, right
+       in a right-to-left one. Pulling left regardless dragged an RTL chevron
+       over the bar after it and left a seam at the logo before it. */
+    var pull = edgeMode === 'chevron' ? (-(edgeAmt || 0)) + 'px' : '';
+    var rtlRibbon = resolveDir(look) === 'rtl';
+    cell.style.marginLeft = rtlRibbon ? '' : pull;
+    cell.style.marginRight = rtlRibbon ? pull : '';
     box.style.lineHeight = st.lineHeight || 1.2;
     box.style.minWidth = (st.minWidth || 0) + 'px';
     /* Fill the cell when this element stretches, and also when it sits in an
