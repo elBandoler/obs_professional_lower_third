@@ -372,6 +372,13 @@ json LtState::normalizeElement(const json &in)
 		double thr = std::min(0.9, std::max(0.0, r3(fnum(key, "threshold", 0.1))));
 		double soft = std::min(1.0, std::max(0.01, r3(fnum(key, "softness", 0.2))));
 		img["key"] = json{ { "mode", kmode }, { "threshold", thr }, { "softness", soft } };
+		/* the artwork's own shape as the dock's probe read it */
+		json sh = (img.contains("shape") && img["shape"].is_object()) ? img["shape"] : json::object();
+		std::string pt = (sh.contains("point") && sh["point"].is_string()) ? sh["point"].get<std::string>() : "none";
+		if (pt != "left" && pt != "right")
+			pt = "none";
+		double df = std::min(1.0, std::max(0.0, r3(fnum(sh, "depthFrac", 0.0))));
+		img["shape"] = json{ { "point", pt }, { "depthFrac", df } };
 		out.erase("text");
 		out.erase("snippets");
 	}
@@ -404,6 +411,33 @@ json LtState::normalizeElement(const json &in)
 
 /* compact empty rows/columns away, then make the order inside each cell
    sequential - mirrors normalizePlacement() in server.js */
+/* the column for a new full-height element: just inside the full-height
+   element nearest the rows, or past every column when there is none.
+   Mirror of fullHeightSlot in server.js. */
+static double fullHeightSlot(const json &els)
+{
+	double maxCol = -1, rowMax = -1, rowMin = 1e9;
+	bool anyFull = false;
+	double afterCol = 1e9, beforeCol = -1e9, firstFull = 0;
+	for (const auto &o : els) {
+		double col = o["place"].value("col", 0.0);
+		bool full = o["place"].value("spanAll", false);
+		maxCol = std::max(maxCol, col);
+		if (full) { if (!anyFull) firstFull = col; anyFull = true; }
+		else { rowMax = std::max(rowMax, col); rowMin = std::min(rowMin, col); }
+	}
+	for (const auto &o : els) {
+		if (!o["place"].value("spanAll", false)) continue;
+		double col = o["place"].value("col", 0.0);
+		if (col > rowMax) afterCol = std::min(afterCol, col);
+		if (col < rowMin) beforeCol = std::max(beforeCol, col);
+	}
+	if (!anyFull) return maxCol + 1;
+	if (afterCol < 1e9) return afterCol - 0.5;
+	if (beforeCol > -1e9) return beforeCol + 0.5;
+	return firstFull - 0.5;
+}
+
 void LtState::normalizePlacement(json &els)
 {
 	/* read as double: element-reorder deliberately parks a dropped element
@@ -1410,30 +1444,8 @@ void LtState::handleClientMessage(const json &msg)
 			/* a full-height element with no column asked for lands in a
 			   column of its own, on the rows' side of the nearest full-height
 			   element; mirror of fullHeightSlot in server.js */
-			if (n["place"].value("spanAll", false) && !msg.contains("col")) {
-				double maxCol = -1, rowMax = -1, rowMin = 1e9;
-				bool anyFull = false;
-				double afterCol = 1e9, beforeCol = -1e9, firstFull = 0;
-				for (const auto &o : st["pending"]["elements"]) {
-					double col = o["place"].value("col", 0.0);
-					bool full = o["place"].value("spanAll", false);
-					maxCol = std::max(maxCol, col);
-					if (full) { if (!anyFull) firstFull = col; anyFull = true; }
-					else { rowMax = std::max(rowMax, col); rowMin = std::min(rowMin, col); }
-				}
-				for (const auto &o : st["pending"]["elements"]) {
-					if (!o["place"].value("spanAll", false)) continue;
-					double col = o["place"].value("col", 0.0);
-					if (col > rowMax) afterCol = std::min(afterCol, col);
-					if (col < rowMin) beforeCol = std::max(beforeCol, col);
-				}
-				double slot;
-				if (!anyFull) slot = maxCol + 1;
-				else if (afterCol < 1e9) slot = afterCol - 0.5;
-				else if (beforeCol > -1e9) slot = beforeCol + 0.5;
-				else slot = firstFull - 0.5;
-				n["place"]["col"] = slot;
-			}
+			if (n["place"].value("spanAll", false) && !msg.contains("col"))
+				n["place"]["col"] = fullHeightSlot(st["pending"]["elements"]);
 			st["pending"]["elements"].push_back(n);
 			normalizePlacement(st["pending"]["elements"]);
 			pushPendingLocked();
@@ -1486,7 +1498,22 @@ void LtState::handleClientMessage(const json &msg)
 			merged["kind"] = (*e)["kind"];
 			json n = normalizeElement(merged);
 			if (!n.is_null()) {
+				bool wasFull = (*e)["place"].value("spanAll", false);
 				*e = n;
+				/* Full height lands in a column of its own; mirror of server.js */
+				if (n["place"].value("spanAll", false) && !wasFull) {
+					double col = n["place"].value("col", 0.0);
+					json others = json::array();
+					bool shared = false;
+					for (const auto &o : st["pending"]["elements"]) {
+						if (o.value("id", "") == id) continue;
+						others.push_back(o);
+						if (!o["place"].value("spanAll", false) && o["place"].value("col", 0.0) == col)
+							shared = true;
+					}
+					if (shared)
+						(*e)["place"]["col"] = fullHeightSlot(others);
+				}
 				normalizePlacement(st["pending"]["elements"]);
 				pushPendingLocked();
 			}

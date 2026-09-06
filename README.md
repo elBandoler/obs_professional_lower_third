@@ -297,12 +297,17 @@ Both work in the Node fallback too.
   to a chevron point or notch automatically, and on a square element its outer side stays
   flat against the edge. The element's own background (colour, gradient, picture) is left
   exactly as it was. Text is kept clear of the band.
-- **Shape the bars beside it** (BOX tab of a *full-height* chevron): the bars its point
-  touches are cut at the angle of the point where each bar sits — the top bar slanting one
-  way, the bottom bar the other, a bar that straddles the middle getting the notch — and
-  tucked under the point, so a full-height chevron fits a stack of ordinary bars exactly.
+- **Shape the bars beside it** (BOX tab of a *full-height* chevron — a drawn one or a
+  **picture**): the bars its point touches are cut at the angle of the point where each bar
+  sits — the top bar slanting one way, the bottom bar the other, a bar that straddles the
+  middle getting the notch — and tucked under the point, so a full-height chevron fits a
+  stack of ordinary bars exactly. The look's *Gap* is kept along the slanted seam; set it to
+  0 for a seamless ribbon. For a picture, the point is read from the picture itself (the same
+  reading that powers "Notch the bars to fit"), so the bars follow the artwork's own edge.
   Only the touching end is cut; the bars' own backgrounds stay. The **＋ chevron** band has
-  this on from the start.
+  this on from the start. An image element needs a *Min width* to have a size at all.
+- **Full height** now moves an element into a column of its own when the column it sat in
+  is shared with a row element; before, it stayed put and drew on top of the bars there.
 
 ## 5. Hotkeys / Stream Deck / automation
 

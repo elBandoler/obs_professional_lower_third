@@ -292,6 +292,13 @@ function normalizeElement(el) {
       threshold: Math.max(0, Math.min(0.9, r3(fnum(key.threshold, 0.1)))),
       softness: Math.max(0.01, Math.min(1, r3(fnum(key.softness, 0.2)))),
     };
+    /* the artwork's own shape as the dock's probe read it: which side its
+       point faces and how deep it reaches, as a fraction of the drawn width */
+    const sh = (img.shape && typeof img.shape === 'object') ? img.shape : {};
+    img.shape = {
+      point: (sh.point === 'left' || sh.point === 'right') ? sh.point : 'none',
+      depthFrac: Math.max(0, Math.min(1, r3(fnum(sh.depthFrac, 0)))),
+    };
     delete out.text;
     delete out.snippets;
   }
@@ -906,7 +913,14 @@ function handleMessage(client, msg) {
       merged.id = el.id;              // never let a patch change identity
       merged.kind = el.kind;
       const idx = state.pending.elements.indexOf(el);
-      state.pending.elements[idx] = normalizeElement(merged);
+      const upd = normalizeElement(merged);
+      state.pending.elements[idx] = upd;
+      /* Full height lands in a column of its own. Left in the column it had,
+         a full-height element sat on top of the bars in that column. */
+      if (upd.place.spanAll && !el.place.spanAll) {
+        const others = state.pending.elements.filter((e) => e !== upd);
+        if (others.some((e) => !e.place.spanAll && e.place.col === upd.place.col)) upd.place.col = fullHeightSlot(others);
+      }
       normalizePlacement(state.pending.elements);
       pushPending();
     }

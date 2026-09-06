@@ -751,7 +751,17 @@
       wrap.innerHTML = '';
       if (!url) return;
       probeArtwork(url, function (info) {
-        if (lastUrl === url) render(info);
+        if (lastUrl !== url) return;
+        render(info);
+        /* the overlay angles the bars beside a full-height picture to the
+           picture's own point, so what the probe read is kept on the element */
+        var want = (info.kind === 'shape' && !info.doublePointed && info.depthFrac > 0)
+          ? { point: info.point, depthFrac: Math.round(info.depthFrac * 1000) / 1000 }
+          : { point: 'none', depthFrac: 0 };
+        var cur = dig(findEl(id) || {}, 'image.shape') || {};
+        if (cur.point !== want.point || Math.abs((cur.depthFrac || 0) - want.depthFrac) > 0.0005) {
+          sendEl(id, 'image.shape', want);
+        }
       });
     }
     sync();
@@ -1338,11 +1348,13 @@
           : [{ v: 'both', l: 'Both ends' }, { v: 'start', l: 'Start only' }, { v: 'end', l: 'End only' }],
         title: 'Start and end follow the reading direction: in a right-to-left strap the start is on the right. A flat start sits flush against the element before it.',
         get: function () { return dig(findEl(id) || {}, 'style.edges.ends') || 'both'; }, set: function (v) { sendEl(id, 'style.edges.ends', v); } });
-      if (e.style.edges.mode === 'chevron' && e.place.spanAll) {
-        add({ type: 'toggle', label: 'Shape the bars beside it',
-          title: 'The bars this chevron\u2019s point touches are cut at its angle where they sit \u2014 the top bar one way, the bottom bar the other \u2014 and tucked under the point, so it fits them exactly. Their backgrounds stay as they are.',
-          get: function () { return !!dig(findEl(id) || {}, 'style.edges.fitNeighbours'); }, set: function (v) { sendEl(id, 'style.edges.fitNeighbours', v); } });
-      }
+    }
+    if (e.place.spanAll && (e.kind === 'image' || (e.style.edges && e.style.edges.mode === 'chevron'))) {
+      add({ type: 'toggle', label: 'Shape the bars beside it',
+        title: e.kind === 'image'
+          ? 'The bars this picture\u2019s point touches are cut at its angle where they sit \u2014 the top bar one way, the bottom bar the other \u2014 and tucked under the point, keeping the look\u2019s gap. The point is read from the picture itself.'
+          : 'The bars this chevron\u2019s point touches are cut at its angle where they sit \u2014 the top bar one way, the bottom bar the other \u2014 and tucked under the point, keeping the look\u2019s gap. Their backgrounds stay as they are.',
+        get: function () { return !!dig(findEl(id) || {}, 'style.edges.fitNeighbours'); }, set: function (v) { sendEl(id, 'style.edges.fitNeighbours', v); } });
     }
     add({ type: 'select', label: 'Accent strip',
       options: [{ v: 'none', l: 'None' }, { v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }, { v: 'side', l: 'Side' },

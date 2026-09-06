@@ -800,7 +800,7 @@
        in a right-to-left one. Pulling left regardless dragged an RTL chevron
        over the bar after it and left a seam at the logo before it. A segment
        with a flat start has no notch, so nothing to pull into. */
-    var pull = (edgeMode === 'chevron' && cutStart) ? (-((edgeAmt || 0) + gapPx)) + 'px' : '';
+    var pull = (edgeMode === 'chevron' && cutStart) ? (-(edgeAmt || 0)) + 'px' : '';
     cell.style.marginLeft = rtlRibbon ? '' : pull;
     cell.style.marginRight = rtlRibbon ? pull : '';
     box.style.lineHeight = st.lineHeight || 1.2;
@@ -1008,42 +1008,77 @@
       if (!f.place.spanAll) return;
       var fst = f.style || {};
       var ed = fst.edges && fst.edges.mode !== 'inherit' ? fst.edges : null;
-      if (!ed || ed.mode !== 'chevron' || !ed.fitNeighbours || ed.ends === 'start') return;
+      var wants = !!(fst.edges && fst.edges.fitNeighbours);
+      if (!wants) return;
       var nf = nodes[f.id];
-      var c = ed.chamfer || 0;
-      if (!nf || !c) return;
+      if (!nf) return;
       var rf = nf.box.getBoundingClientRect();
       if (!rf.height) return;
-      var half = rf.height / 2;
-      var pointX = rtl ? rf.left : rf.right;      /* the point is at the chevron's END */
+      var c = 0, pointLeft, tipX, tipTop = rf.top, tipHeight = rf.height;
+      if (f.kind === 'image') {
+        /* a PICTURE chevron: the point is the artwork's own, as the dock's
+           probe read it (image.shape); the drawn artwork is the media node's
+           rect. A picture with no readable shape falls back to the element's
+           depth setting and the reading direction's end. */
+        var sh = f.image && f.image.shape;
+        var ri = nf.img ? nf.img.getBoundingClientRect() : rf;
+        if (!ri.width) return;
+        if (sh && sh.point !== 'none' && sh.depthFrac > 0) {
+          c = Math.round(sh.depthFrac * ri.width);
+          pointLeft = sh.point === 'left';
+        } else {
+          c = (fst.edges && fst.edges.chamfer) || 0;
+          pointLeft = rtl;
+        }
+        tipX = pointLeft ? ri.left : ri.right;
+        tipTop = ri.top; tipHeight = ri.height;
+      } else {
+        /* a drawn chevron: needs chevron edges with a point */
+        if (!ed || ed.mode !== 'chevron' || ed.ends === 'start') return;
+        c = ed.chamfer || 0;
+        pointLeft = rtl;
+        tipX = pointLeft ? rf.left : rf.right;
+      }
+      if (!(c > 0)) return;
+      var half = tipHeight / 2;
+      var inset = pointLeft ? (tipX - rf.left) : (rf.right - tipX);   /* artwork inside its box */
+      if (inset < 0) inset = 0;
       nf.cell.style.zIndex = '1';
       els.forEach(function (e) {
         if (e === f || e.place.spanAll) return;
         var n = nodes[e.id];
         if (!n) return;
         var r = n.box.getBoundingClientRect();
-        if (!r.height || r.bottom <= rf.top + 1 || r.top >= rf.bottom - 1) return;
-        var facing = rtl ? r.right : r.left;
-        var dist = rtl ? (pointX - facing) : (facing - pointX);
-        if (dist < -c - gap - 2 || dist > gap + c + 2) return;      /* not the bar touching it */
-        var yTop = Math.max(0, r.top - rf.top), yBot = Math.min(rf.height, r.bottom - rf.top);
+        if (!r.height || r.bottom <= tipTop + 1 || r.top >= tipTop + tipHeight - 1) return;
+        /* the bar touching the chevron's box on the point side (before or
+           after its pull) */
+        var facing = pointLeft ? r.right : r.left;
+        var dist = pointLeft ? (rf.left - facing) : (facing - rf.right);
+        if (dist < -(c + inset) - 2 || dist > gap + 2) return;
+        /* the bar's edge follows the point's outline at the look's gap: at the
+           tip's height it is cut by the full depth, at the point's base not at
+           all, and a bar straddling the middle gets the notch */
+        var yTop = Math.max(0, r.top - tipTop), yBot = Math.min(tipHeight, r.bottom - tipTop);
         function cut(y) { return c * Math.max(0, 1 - Math.abs(y - half) / half); }
         var cTop = cut(yTop).toFixed(2), cBot = cut(yBot).toFixed(2);
         var straddles = yTop < half && yBot > half;
-        var tip = ((rf.top + half - r.top) / r.height * 100).toFixed(3);
+        var tip = ((tipTop + half - r.top) / r.height * 100).toFixed(3);
         var poly;
-        if (!rtl) {
-          poly = 'polygon(' + cTop + 'px 0, 100% 0, 100% 100%, ' + cBot + 'px 100%' + (straddles ? ', ' + c + 'px ' + tip + '%' : '') + ')';
-        } else {
+        if (pointLeft) {   /* the bar is on the left: cut its right end */
           poly = 'polygon(0 0, calc(100% - ' + cTop + 'px) 0, ' + (straddles ? 'calc(100% - ' + c + 'px) ' + tip + '%, ' : '') + 'calc(100% - ' + cBot + 'px) 100%, 0 100%)';
+        } else {           /* the bar is on the right: cut its left end */
+          poly = 'polygon(' + cTop + 'px 0, 100% 0, 100% 100%, ' + cBot + 'px 100%' + (straddles ? ', ' + c + 'px ' + tip + '%' : '') + ')';
         }
         n.box.style.clipPath = poly;
-        /* under the point by one depth, above the chevron, text kept clear */
-        if (rtl) n.cell.style.marginRight = (-(c + gap)) + 'px'; else n.cell.style.marginLeft = (-(c + gap)) + 'px';
+        /* under the point by one depth (plus however far the artwork sits
+           inside its box), above the chevron, text kept clear. The gap is
+           NOT added: the cut boundary then sits one gap off the point. */
+        var pull = (-(c + inset)) + 'px';
+        if (pointLeft) n.cell.style.marginRight = pull; else n.cell.style.marginLeft = pull;
         n.cell.style.zIndex = '2';
         var est = e.style || {};
         var padCut = ((est.padX || 0) + c) + 'px';
-        if (rtl) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
+        if (pointLeft) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
         n._fit = true;
       });
     });
