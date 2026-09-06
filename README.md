@@ -308,6 +308,9 @@ Both work in the Node fallback too.
   this on from the start. An image element needs a *Min width* to have a size at all.
 - **Full height** now moves an element into a column of its own when the column it sat in
   is shared with a row element; before, it stayed put and drew on top of the bars there.
+- **Space before / Space after** (PLACE tab): extra room on either side of one element, in
+  reading order, on top of the look's *Gap* (LAYOUT & POSITION). Use it to separate a
+  chevron or a logo from its neighbours; bars shaped around a chevron follow it.
 
 ## 5. Hotkeys / Stream Deck / automation
 

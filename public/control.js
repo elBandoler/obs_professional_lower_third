@@ -1202,6 +1202,12 @@
       get: function () { return dig(findEl(id) || {}, 'place.spanAll'); }, set: function (v) { sendEl(id, 'place.spanAll', v); scheduleRebuild(); } });
     add({ type: 'slider', label: 'Min width', min: 0, max: 600, step: 5, unit: 'px',
       get: function () { return dig(findEl(id) || {}, 'style.minWidth'); }, set: function (v) { sendEl(id, 'style.minWidth', v); } });
+    add({ type: 'slider', label: 'Space before', min: 0, max: 200, step: 1, unit: 'px',
+      title: 'Extra room between this element and the one before it (in reading order), on top of the look\u2019s Gap',
+      get: function () { return dig(findEl(id) || {}, 'style.spaceStart') || 0; }, set: function (v) { sendEl(id, 'style.spaceStart', v); } });
+    add({ type: 'slider', label: 'Space after', min: 0, max: 200, step: 1, unit: 'px',
+      title: 'Extra room between this element and the one after it (in reading order), on top of the look\u2019s Gap',
+      get: function () { return dig(findEl(id) || {}, 'style.spaceEnd') || 0; }, set: function (v) { sendEl(id, 'style.spaceEnd', v); } });
 
     pane = 'style';
     add({ type: 'color', label: 'Background', get: function () { return dig(findEl(id) || {}, 'style.bg'); }, set: function (v) { sendEl(id, 'style.bg', v); } });

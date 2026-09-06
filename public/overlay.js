@@ -800,9 +800,14 @@
        in a right-to-left one. Pulling left regardless dragged an RTL chevron
        over the bar after it and left a seam at the logo before it. A segment
        with a flat start has no notch, so nothing to pull into. */
-    var pull = (edgeMode === 'chevron' && cutStart) ? (-(edgeAmt || 0)) + 'px' : '';
-    cell.style.marginLeft = rtlRibbon ? '' : pull;
-    cell.style.marginRight = rtlRibbon ? pull : '';
+    var pullPx = (edgeMode === 'chevron' && cutStart) ? -(edgeAmt || 0) : 0;
+    /* the operator's own room on either side, in reading order, on top of
+       the look's gap: start is the right side in a right-to-left strap */
+    var sp = spacesOf(e, rtlRibbon);
+    var mL = (rtlRibbon ? 0 : pullPx) + sp.left;
+    var mR = (rtlRibbon ? pullPx : 0) + sp.right;
+    cell.style.marginLeft = mL ? mL + 'px' : '';
+    cell.style.marginRight = mR ? mR + 'px' : '';
     box.style.lineHeight = st.lineHeight || 1.2;
     box.style.minWidth = (st.minWidth || 0) + 'px';
     /* Fill the cell when this element stretches, and also when it sits in an
@@ -991,6 +996,14 @@
      cut. Only the touching end is cut; the bar's own background stays.
      Measured after layout, because the angle depends on where each bar sits
      within the chevron's height. Opt-in per chevron (edges.fitNeighbours). */
+  /* per-element spacing as physical left/right margins */
+  function spacesOf(e, rtl) {
+    var st = e.style || {};
+    var s = Math.max(0, Math.min(400, +st.spaceStart || 0));
+    var n = Math.max(0, Math.min(400, +st.spaceEnd || 0));
+    return rtl ? { left: n, right: s } : { left: s, right: n };
+  }
+
   function fitToChevrons(look) {
     if (!grid) return;
     var rtl = stage.dataset.dir === 'rtl';
@@ -1054,7 +1067,9 @@
            after its pull) */
         var facing = pointLeft ? r.right : r.left;
         var dist = pointLeft ? (rf.left - facing) : (facing - rf.right);
-        if (dist < -(c + inset) - 2 || dist > gap + 2) return;
+        var sp = spacesOf(e, rtl), spF = spacesOf(f, rtl);
+        var extra = (pointLeft ? spF.left + sp.right : spF.right + sp.left);   /* room either side asked for */
+        if (dist < -(c + inset) - 2 || dist > gap + extra + 2) return;
         /* the bar's edge follows the point's outline at the look's gap: at the
            tip's height it is cut by the full depth, at the point's base not at
            all, and a bar straddling the middle gets the notch */
@@ -1073,8 +1088,8 @@
         /* under the point by one depth (plus however far the artwork sits
            inside its box), above the chevron, text kept clear. The gap is
            NOT added: the cut boundary then sits one gap off the point. */
-        var pull = (-(c + inset)) + 'px';
-        if (pointLeft) n.cell.style.marginRight = pull; else n.cell.style.marginLeft = pull;
+        var pullPx = -(c + inset) + (pointLeft ? sp.right : sp.left);
+        if (pointLeft) n.cell.style.marginRight = pullPx + 'px'; else n.cell.style.marginLeft = pullPx + 'px';
         n.cell.style.zIndex = '2';
         var est = e.style || {};
         var padCut = ((est.padX || 0) + c) + 'px';
