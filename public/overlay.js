@@ -811,6 +811,11 @@
     }
     box.style.padding = st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetStart : insetEnd)) + 'px ' +
       st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetEnd : insetStart)) + 'px';
+    var nn = nodes[e.id];
+    if (nn && nn._padCut) {
+      if (nn._padCut.left) box.style.paddingLeft = nn._padCut.left;
+      if (nn._padCut.right) box.style.paddingRight = nn._padCut.right;
+    }
     /* Chevron segments have to overlap by one chamfer or the point never
        reaches its neighbour's notch and the seam shows the key through. The
        pull goes on the CELL: the box fills its cell, so a margin there would
@@ -864,6 +869,10 @@
     if (e.kind === 'text') {
       n.txt.style.textAlign = st.align && st.align !== 'auto' ? st.align : (look.style.textAlign || 'start');
       n.txt.style.whiteSpace = st.nowrap ? 'nowrap' : '';
+      /* the bar is at least as tall as one line at the style's size: a line
+         shrunk to fit then keeps the bar's height instead of shortening it
+         (an unshrunk single line is exactly this tall already) */
+      box.style.minHeight = ((+st.size || 40) * (+st.lineHeight || 1.2) + (+st.padY || 0) * 2).toFixed(2) + 'px';
       if (e.place.stretch) cell.dataset.stretch = '1';
     } else {
       box.style.minHeight = Math.round((st.size || 56) * 1.18 + (st.padY || 0) * 2) + 'px';
@@ -881,7 +890,99 @@
 
   /* ------------------------------------------------------------- updates */
 
-  function swapText(container, line, newText, mode) {
+  /* Shrink to fit. When only a few words would spill onto a second line,
+     the text is drawn a little smaller so it stays on one line, instead of
+     the bar growing a line taller. The fitted size lives on the .line, not
+     the box: an outgoing clone keeps the size it was shown at, the box's
+     min-height (from the style's size) keeps the bar's height, and nothing
+     transitions. Measured with a hidden copy of the text on one line at the
+     style's size. Returns true when the line's size changed. */
+  function fitSpec(st) {
+    var f = (st && st.fit && typeof st.fit === 'object') ? st.fit : {};
+    return {
+      on: f.mode !== 'off',
+      words: Math.max(1, Math.min(8, Math.round(+f.words) || 3)),
+      minRatio: Math.max(0.4, Math.min(1, (+f.minPct || 70) / 100)),
+    };
+  }
+  function fitTextSize(e, n) {
+    if (!n || !n.line || !n.txt) return false;
+    var st = e.style || {};
+    var spec = fitSpec(st);
+    var before = n.line.style.fontSize || '';
+    n.line.style.fontSize = '';
+    var changed = function () { return (n.line.style.fontSize || '') !== before; };
+    if (!spec.on) return changed();
+    var text = n.line.textContent || '';
+    var words = text.split(/\s+/).filter(function (w) { return w; });
+    if (words.length < 2) return changed();
+    var m = n.meas;
+    if (!m) {
+      m = document.createElement('span');
+      m.className = 'meas';
+      m.setAttribute('aria-hidden', 'true');
+      n.txt.appendChild(m);
+      n.meas = m;
+    }
+    m.style.fontSize = '';
+    var avail = n.txt.clientWidth;
+    if (!(avail > 0)) return changed();
+    m.textContent = text;
+    var natural = crect(m).width;
+    if (natural <= avail + 0.5) return changed();            /* one line already */
+    /* how many trailing words would spill? With "never wrap" nothing can
+       spill — the text is clipped instead — so any overflow counts. */
+    var limit = st.nowrap ? words.length - 1 : spec.words;
+    var ok = false;
+    for (var k = 1; k <= limit && k < words.length; k++) {
+      m.textContent = words.slice(0, words.length - k).join(' ');
+      if (crect(m).width <= avail) { ok = true; break; }
+    }
+    if (!ok) return changed();                                /* a long text: let it wrap */
+    var size = +st.size || 40;
+    var ratio = (avail - 1) / natural;
+    if (ratio < spec.minRatio) return changed();              /* would need too small a font */
+    var fitted = Math.floor(size * ratio * 100) / 100;
+    n.line.style.fontSize = fitted + 'px';
+    /* letter-spacing is in px and does not scale with the font, so the
+       estimate can land a hair long: nudge down until it is one line */
+    m.textContent = text;
+    m.style.fontSize = fitted + 'px';
+    for (var tries = 0; tries < 4 && crect(m).width > n.txt.clientWidth + 0.5; tries++) {
+      fitted = Math.floor(fitted * 0.985 * 100) / 100;
+      if (fitted / size < spec.minRatio) { n.line.style.fontSize = ''; m.style.fontSize = ''; return changed(); }
+      n.line.style.fontSize = fitted + 'px';
+      m.style.fontSize = fitted + 'px';
+    }
+    m.style.fontSize = '';
+    return changed();
+  }
+  /* every text bar not mid-swap; true when a size or a bar's height changed */
+  function fitAllText(look) {
+    var changed = false;
+    visibleElements(look).forEach(function (e) {
+      if (e.kind !== 'text') return;
+      var n = nodes[e.id];
+      if (!n || !n.line) return;
+      /* a swap in flight was fitted as its text was set; measuring now, with
+         the box pinned mid-animation, would see the wrong width */
+      if (n.line._swapTimer || n.box._widthTimer) return;
+      var h0 = crect(n.box).height;
+      if (fitTextSize(e, n)) changed = true;
+      if (Math.abs(crect(n.box).height - h0) > 0.5) changed = true;
+    });
+    return changed;
+  }
+  /* the geometry passes, in order: text shrunk to fit, then the cuts beside
+     chevrons — which take width from a bar, so the text is fitted again, and
+     if that changed a bar the cuts are measured once more */
+  function layoutPasses(look, force) {
+    fitAllText(look);
+    fitToChevrons(look, force);
+    if (fitAllText(look)) fitToChevrons(look, force);
+  }
+
+  function swapText(container, line, newText, mode, afterSet) {
     var cls = mode === 'crossfade' ? 'swap-fade' : 'swap-slide';
     /* a swap arriving before the previous one finished: drop the old clone and
        cancel its timer, otherwise it strips this swap's classes mid-flight */
@@ -912,6 +1013,10 @@
     var h0 = rectH(container);
     line.textContent = newText;
     container.style.height = '';
+    /* the caller unpins the box and fits the new text HERE, so the held
+       height and the width the flip animates to are those of the fitted
+       line, not of the text wrapped at its full size */
+    if (afterSet) afterSet();
     var h1 = rectH(container);
     container.style.height = Math.ceil(Math.max(h0, h1)) + 'px';
 
@@ -941,7 +1046,7 @@
       enterLine.style.width = '';
     }
 
-    mutate();
+    mutate(function () { box.style.width = settled; });
     box.style.width = settled;
     var w1 = rectW(box);
 
@@ -985,9 +1090,11 @@
     if (animate && mode !== 'instant') {
       if (e.place.stretch) {
         /* width is dictated by the layout, not the text */
-        swapText(n.txt, n.line, newText, mode);
+        swapText(n.txt, n.line, newText, mode, function () { fitTextSize(e, n); });
       } else {
-        flipWidth(n.box, function () { swapText(n.txt, n.line, newText, mode); }, n.line);
+        flipWidth(n.box, function (unpin) {
+          swapText(n.txt, n.line, newText, mode, function () { unpin(); fitTextSize(e, n); });
+        }, n.line);
       }
     } else {
       n.line.textContent = newText;
@@ -1049,6 +1156,7 @@
       if (n && n._fit) {
         n._fit = false;
         n._cuts = null;
+        n._padCut = null;
         n.box.style.clipPath = '';
         n.cell.style.zIndex = '';
       }
@@ -1111,6 +1219,8 @@
         var est = e.style || {};
         var padCut = ((est.padX || 0) + c) + 'px';
         if (sideLeft) n.box.style.paddingRight = padCut; else n.box.style.paddingLeft = padCut;
+        n._padCut = n._padCut || {};
+        n._padCut[sideLeft ? 'right' : 'left'] = padCut;
         n._fit = true;
         shaped++;
       });
@@ -1213,9 +1323,10 @@
       if (e.kind === 'text') updateText(e, animate);
       else updateImage(e, animate);
     });
-    /* geometry-dependent cuts, once now and once after fonts and wrapping settle */
-    fitToChevrons(look);
-    if (window.requestAnimationFrame) requestAnimationFrame(function () { if (current === look) fitToChevrons(look); });
+    /* text shrunk to fit, then the cuts beside chevrons — once now, and once
+       more after fonts and wrapping settle */
+    layoutPasses(look);
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { if (current === look) layoutPasses(look); });
 
     current = look;
     /* restart any rotation whose sources or timing just changed, and stop the
@@ -1255,7 +1366,7 @@
        nothing moving, so measure and cut here, not after the entrance — a
        SHOW arriving while the hide was still running used to find the
        stage "busy" and put the cuts off until the entrance had finished */
-    if (current) fitToChevrons(current, true);
+    if (current) layoutPasses(current, true);
     stage.classList.add('anim-in');
     animTimer = setTimeout(function () {
       animTimer = null;
@@ -1410,6 +1521,11 @@
   }
 
   var ws = null;
+  /* a font that arrives after the first layout changes every width */
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener('loadingdone', function () { if (current && grid) layoutPasses(current); });
+  }
+
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     ws = new WebSocket(proto + location.host + '/ws?role=' + ROLE);

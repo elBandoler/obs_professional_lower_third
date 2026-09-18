@@ -95,6 +95,7 @@ function minimalDefaults() {
     bgImage: { enabled: false, url: '', fit: 'cover' },
     edges: { mode: 'inherit', radius: 14, chamfer: 26, ends: 'both' },
     accent: { mode: 'none', color: '#1c56d6', thickness: 6 },
+    fit: { mode: 'words', words: 3, minPct: 70 },
   };
   const styleDefaults = {
     direction: 'auto', textAlign: 'start',
@@ -239,6 +240,17 @@ function normalizeElement(el) {
   };
   /* an element cannot react to its own logo changing */
   if (out.anim.reactTo === out.id) out.anim.reactTo = '';
+
+  /* shrink to fit: a text that would spill a few words onto a second line
+     is drawn a little smaller instead. Mirror of the block in lt-state.cpp. */
+  if (!out.style || typeof out.style !== 'object') out.style = {};
+  const fs0 = (out.style.fit && typeof out.style.fit === 'object') ? out.style.fit : {};
+  const fnum2 = (v, d) => (typeof v === 'number' && isFinite(v) ? Math.trunc(v) : d);
+  out.style.fit = {
+    mode: fs0.mode === 'off' ? 'off' : 'words',
+    words: Math.max(1, Math.min(8, fnum2(fs0.words, 3))),
+    minPct: Math.max(40, Math.min(100, fnum2(fs0.minPct, 70))),
+  };
 
   if (kind === 'text') {
     out.text = typeof out.text === 'string' ? out.text : '';

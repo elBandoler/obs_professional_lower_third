@@ -1271,6 +1271,16 @@
         get: function () { return dig(findEl(id) || {}, 'style.align'); }, set: function (v) { sendEl(id, 'style.align', v); } });
       add({ type: 'toggle', label: 'Never wrap',
         get: function () { return dig(findEl(id) || {}, 'style.nowrap'); }, set: function (v) { sendEl(id, 'style.nowrap', v); } });
+      var fitOn = function () { return dig(findEl(id) || {}, 'style.fit.mode') !== 'off'; };
+      add({ type: 'toggle', label: 'Shrink to fit',
+        title: 'When only a few words would spill onto a second line, draw the text a little smaller so it stays on one line, instead of the bar growing a line taller',
+        get: fitOn, set: function (v) { sendEl(id, 'style.fit.mode', v ? 'words' : 'off'); } });
+      add({ type: 'slider', label: 'Spill tolerance', min: 1, max: 8, step: 1, unit: ' words', showIf: fitOn,
+        title: 'Shrink only when at most this many words would spill; a longer text wraps as before. With Never wrap on, any overflow counts.',
+        get: function () { return dig(findEl(id) || {}, 'style.fit.words'); }, set: function (v) { sendEl(id, 'style.fit.words', v); } });
+      add({ type: 'slider', label: 'Smallest size', min: 40, max: 100, step: 1, unit: '%', showIf: fitOn,
+        title: 'Never smaller than this share of the Size above; a text that would need less wraps instead',
+        get: function () { return dig(findEl(id) || {}, 'style.fit.minPct'); }, set: function (v) { sendEl(id, 'style.fit.minPct', v); } });
     }
 
     pane = 'motion';

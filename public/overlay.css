@@ -87,6 +87,9 @@ body.bg-green { background: #00b140; }
 #stage[data-dir="rtl"] .txt { direction: rtl; }
 #stage[data-dir="ltr"] .txt { direction: ltr; }
 .line { display: block; }
+/* shrink-to-fit's hidden measurer: the text on one line at the box's own
+   font size, outside .line so a fitted size never feeds back into it */
+.meas { position: absolute; top: 0; left: 0; visibility: hidden; white-space: nowrap; pointer-events: none; }
 /* width/height/left/right are set inline at swap time to freeze the outgoing
    text's layout so it cannot re-wrap while it animates out */
 .line-exit {

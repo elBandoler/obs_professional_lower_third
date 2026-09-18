@@ -26,6 +26,8 @@
 #include <shellapi.h>
 #endif
 
+namespace fs = std::filesystem;
+
 #include "lt-state.h"
 #include "lt-server.h"
 
@@ -152,6 +154,23 @@ static bool try_start_server(void)
 
 bool obs_module_load(void)
 {
+	/* The installer parks the loaded DLL aside as obs-lowerthirds.dll.old-*
+	   when it updates while OBS is running. Now that we are the loaded one,
+	   those copies are free to go; the one an older OBS still has mapped
+	   refuses, and is swept the next time. */
+	{
+		const char *bin = obs_get_module_binary_path(obs_current_module());
+		if (bin) {
+			std::error_code ec;
+			fs::path dir = fs::path(bin).parent_path();
+			for (const auto &ent : fs::directory_iterator(dir, ec)) {
+				std::string nm = ent.path().filename().string();
+				if (nm.rfind("obs-lowerthirds.dll.old", 0) == 0)
+					fs::remove(ent.path(), ec);
+			}
+		}
+	}
+
 	char *cfg = obs_module_config_path("");
 	if (!cfg) {
 		blog(LOG_ERROR, "[obs-lowerthirds] no config path");

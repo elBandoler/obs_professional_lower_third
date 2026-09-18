@@ -39,6 +39,14 @@ included as alternatives that serve exactly the same pages.
    - OBS's **Transition** button commits pending changes natively — no obs-websocket setup
 3. Uninstall via Windows "Installed apps" like any program.
 
+**Updating:** run the newer `obs-lowerthirds-setup.exe` over the installed one — or the smaller
+`obs-lowerthirds-update.exe`, which only updates an existing install. Either way it is an
+in-place update: nothing is uninstalled, and your presets, saved texts, uploads and the dock
+(all in `%APPDATA%\obs-studio\plugin_config\obs-lowerthirds`) stay exactly as they are.
+**OBS may keep running:** the control panel and overlay files are updated at once, and the
+plugin itself is swapped in the next time OBS starts (the loaded copy is renamed aside and
+cleaned up on the next start).
+
 **Option B — Lua script + Node server:**
 Install [Node.js LTS](https://nodejs.org), run `npm install` once, then in OBS:
 *Tools → Scripts → +* → pick **`obs-lower-thirds.lua`**. The Node server starts/stops with
@@ -316,6 +324,22 @@ Both work in the Node fallback too.
 - **Space before / Space after** (PLACE tab): extra room on either side of one element, in
   reading order, on top of the look's *Gap* (LAYOUT & POSITION). Use it to separate a
   chevron or a logo from its neighbours; bars shaped around a chevron follow it.
+
+### Shrink to fit
+
+When a text is a little too long for its bar — one, two, three words would spill onto a
+second line — the bar used to grow a line taller. Now the text is drawn a little smaller
+instead, so it stays on one line and the bar keeps its height. It is on for every text
+element; on the TYPE tab:
+
+- **Shrink to fit** — off, and the text wraps as before.
+- **Spill tolerance** (1–8 words, default 3) — shrink only when at most this many words
+  would spill; a genuinely long text still wraps. With *Never wrap* on, any overflow counts.
+- **Smallest size** (40–100 %, default 70 %) — never smaller than this share of the Size;
+  a text that would need less wraps instead.
+
+The fitted size is applied as the text is set, so a text change animates straight to it —
+no taller bar mid-change — and it is re-measured when a font finishes loading.
 
 ## 5. Hotkeys / Stream Deck / automation
 

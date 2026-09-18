@@ -46,6 +46,7 @@ static json minimalDefaults()
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
 	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
+	        "fit": { "mode": "words", "words": 3, "minPct": 70 },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } },
 	    "image": { "kind": "image", "name": "Image", "enabled": true,
 	      "place": { "row": 0, "col": 0, "order": 0, "stretch": false, "spanAll": false, "rowSpan": 1, "colSpan": 1 },
@@ -60,6 +61,7 @@ static json minimalDefaults()
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
 	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
+	        "fit": { "mode": "words", "words": 3, "minPct": 70 },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } }
 	  },
 	  "styleDefaults": {
@@ -82,6 +84,7 @@ static json minimalDefaults()
 	          "stops": [ { "color": "#ffffff", "pos": 0, "opacity": 1 }, { "color": "#e9edf5", "pos": 100, "opacity": 1 } ] },
 	        "bgImage": { "enabled": false, "url": "", "fit": "cover" },
 	        "edges": { "mode": "inherit", "radius": 14, "chamfer": 26, "ends": "both" },
+	        "fit": { "mode": "words", "words": 3, "minPct": 70 },
 	        "accent": { "mode": "none", "color": "#1c56d6", "thickness": 6 } } } ],
 	    "style": { "direction": "auto", "textAlign": "start",
 	      "layout": { "anchor": "left", "fullWidth": true, "maxWidth": 70, "sideMargin": 0, "bottomMargin": 64 },
@@ -291,6 +294,19 @@ json LtState::normalizeElement(const json &in)
 		if (okId)
 			reactTo = cand;
 	}
+	/* shrink to fit: mirror of the block in server.js */
+	{
+		if (!out.contains("style") || !out["style"].is_object())
+			out["style"] = json::object();
+		json &sto = out["style"];
+		json fs = (sto.contains("fit") && sto["fit"].is_object()) ? sto["fit"] : json::object();
+		std::string fmode = (fs.contains("mode") && fs["mode"].is_string() &&
+		                     fs["mode"].get<std::string>() == "off") ? "off" : "words";
+		sto["fit"] = json{ { "mode", fmode },
+		                   { "words", clampInt(numOr(fs, "words", 3), 1, 8) },
+		                   { "minPct", clampInt(numOr(fs, "minPct", 70), 40, 100) } };
+	}
+
 	/* an element cannot react to its own logo changing */
 	if (reactTo == out.value("id", std::string()))
 		reactTo.clear();
