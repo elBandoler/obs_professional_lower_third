@@ -812,9 +812,12 @@
     box.style.padding = st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetStart : insetEnd)) + 'px ' +
       st.padY + 'px ' + ((st.padX || 0) + (rtlRibbon ? insetEnd : insetStart)) + 'px';
     var nn = nodes[e.id];
-    if (nn && nn._padCut) {
-      if (nn._padCut.left) box.style.paddingLeft = nn._padCut.left;
-      if (nn._padCut.right) box.style.paddingRight = nn._padCut.right;
+    if (nn) {
+      nn._basePad = box.style.padding;
+      if (nn._padCut) {
+        if (nn._padCut.left) box.style.paddingLeft = nn._padCut.left;
+        if (nn._padCut.right) box.style.paddingRight = nn._padCut.right;
+      }
     }
     /* Chevron segments have to overlap by one chamfer or the point never
        reaches its neighbour's notch and the seam shows the key through. The
@@ -832,6 +835,21 @@
     var mR = (rtlRibbon ? pullPx : 0) + sp.right;
     cell.style.marginLeft = mL ? mL + 'px' : '';
     cell.style.marginRight = mR ? mR + 'px' : '';
+    /* A bar shaped around a chevron, and the chevron itself, keep the cut
+       pass's margins through this style pass (the padding is kept below):
+       a text change then measures its width as it is really drawn — inside
+       its swap it used to see a column narrower by the chevrons' depths,
+       decline a fit the preview accepted, and wrap — and a deferred pass
+       leaves nothing to jump. The pass restores these base values itself
+       before it measures, and recomputes the overrides. */
+    var nnm = nodes[e.id];
+    if (nnm) {
+      nnm._baseM = { l: cell.style.marginLeft, r: cell.style.marginRight };
+      if (nnm._cellM) {
+        if (nnm._cellM.l !== undefined) cell.style.marginLeft = nnm._cellM.l;
+        if (nnm._cellM.r !== undefined) cell.style.marginRight = nnm._cellM.r;
+      }
+    }
     box.style.lineHeight = st.lineHeight || 1.2;
     box.style.minWidth = (st.minWidth || 0) + 'px';
     /* Fill the cell when this element stretches, and also when it sits in an
@@ -1153,13 +1171,15 @@
     var els = visibleElements(look);
     Object.keys(nodes).forEach(function (id) {
       var n = nodes[id];
-      if (n && n._fit) {
-        n._fit = false;
-        n._cuts = null;
-        n._padCut = null;
-        n.box.style.clipPath = '';
-        n.cell.style.zIndex = '';
-      }
+      if (!n || !(n._fit || n._cellM || n._padCut)) return;
+      n._fit = false;
+      n._cuts = null;
+      n._padCut = null;
+      n._cellM = null;
+      n.box.style.clipPath = '';
+      n.cell.style.zIndex = '';
+      if (n._basePad !== undefined) n.box.style.padding = n._basePad;
+      if (n._baseM) { n.cell.style.marginLeft = n._baseM.l; n.cell.style.marginRight = n._baseM.r; }
     });
 
     /* One polygon per bar, with a cut on whichever ends were shaped: a bar
@@ -1213,6 +1233,8 @@
         n._cuts[sideLeft ? 'right' : 'left'] = { cTop: cTop, cBot: cBot, apex: apex, tip: tip, straddles: straddles };
         var pullPx = -(c + inset) + (sideLeft ? sp.right : sp.left);
         if (sideLeft) n.cell.style.marginRight = pullPx + 'px'; else n.cell.style.marginLeft = pullPx + 'px';
+        n._cellM = n._cellM || {};
+        n._cellM[sideLeft ? 'r' : 'l'] = pullPx + 'px';
         /* above the chevron either way: its cut is exact, so a point it
            fills shows the same as it would through the notch */
         n.cell.style.zIndex = '2';
@@ -1277,8 +1299,9 @@
            the usual overlap pull is what closes the seam — keep it */
         if (came) {
           var spF = spacesOf(f, rtl);
-          if (endLeft) nf.cell.style.marginRight = spF.right ? spF.right + 'px' : '';
-          else nf.cell.style.marginLeft = spF.left ? spF.left + 'px' : '';
+          nf._cellM = nf._cellM || {};
+          if (endLeft) { nf.cell.style.marginRight = spF.right ? spF.right + 'px' : ''; nf._cellM.r = nf.cell.style.marginRight; }
+          else { nf.cell.style.marginLeft = spF.left ? spF.left + 'px' : ''; nf._cellM.l = nf.cell.style.marginLeft; }
         }
       }
     });

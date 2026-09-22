@@ -13,7 +13,7 @@
 ; once. The plugin sweeps the parked copies the next time it loads.
 
 #define MyAppName "OBS Lower Thirds"
-#define MyAppVersion "1.6.19"
+#define MyAppVersion "1.6.20"
 #define UninstKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\{7E1FA9D2-52B4-4A0C-9D8E-2C6A31B0F5D7}_is1"
 
 [Setup]
