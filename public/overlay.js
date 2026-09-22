@@ -1000,6 +1000,28 @@
     if (fitAllText(look)) fitToChevrons(look, force);
   }
 
+  /* While a text swap animates, a bar's height changes every frame and the
+     cuts beside a chevron are measured from that height: recompute them each
+     frame until the last swap has ended, so the point stays matched to the
+     bar as it shrinks or grows. The final pass at the swap's end settles it. */
+  var swapFollow = null;
+  function followSwaps() {
+    if (swapFollow || !window.requestAnimationFrame) return;
+    var boxes = grid ? grid.querySelectorAll('.box') : [];
+    for (var i = 0; i < boxes.length; i++) boxes[i].classList.add('cut-follow');
+    function tick() {
+      if (!stage.querySelector('.line-exit') || !current || !grid) {
+        swapFollow = null;
+        var bx = grid ? grid.querySelectorAll('.box') : [];
+        for (var k = 0; k < bx.length; k++) bx[k].classList.remove('cut-follow');
+        return;
+      }
+      fitToChevrons(current, true);
+      swapFollow = requestAnimationFrame(tick);
+    }
+    swapFollow = requestAnimationFrame(tick);
+  }
+
   function swapText(container, line, newText, mode, afterSet) {
     var cls = mode === 'crossfade' ? 'swap-fade' : 'swap-slide';
     /* a swap arriving before the previous one finished: drop the old clone and
@@ -1031,19 +1053,29 @@
     var h0 = rectH(container);
     line.textContent = newText;
     container.style.height = '';
-    /* the caller unpins the box and fits the new text HERE, so the held
-       height and the width the flip animates to are those of the fitted
-       line, not of the text wrapped at its full size */
+    /* the caller unpins the box and fits the new text HERE, so the height
+       the bar animates to and the width the flip animates to are those of
+       the fitted line, not of the text wrapped at its full size */
     if (afterSet) afterSet();
     var h1 = rectH(container);
-    container.style.height = Math.ceil(Math.max(h0, h1)) + 'px';
+    /* from the outgoing text's height to the incoming one, on the slide's
+       clock (#stage.prop-anim .txt transitions height): the outgoing lines
+       are clipped away as they leave instead of the bar holding the taller
+       height for the whole swap and snapping at the end */
+    container.style.height = Math.ceil(h0) + 'px';
+    void container.offsetHeight;
+    container.style.height = Math.ceil(h1) + 'px';
 
     line.classList.add('line-enter', cls);
+    followSwaps();
     line._swapTimer = setTimeout(function () {
       line._swapTimer = null;
       clone.remove();
       container.style.height = '';
       line.classList.remove('line-enter', 'swap-slide', 'swap-fade');
+      /* the bar has its settled height now: the cuts beside a chevron, and
+         the fit, are measured once more against it */
+      if (current && grid) layoutPasses(current);
     }, (anim ? anim.changeMs : 450) + 120);
   }
 
@@ -1151,7 +1183,7 @@
   var fitRetry = null;
   function fitBusy() {
     return stage.classList.contains('anim-in') || stage.classList.contains('anim-out') ||
-      !!stage.querySelector('.react-flick, .react-replay, .react-pulse, .img-enter, .img-exit');
+      !!stage.querySelector('.react-flick, .react-replay, .react-pulse, .img-enter, .img-exit, .line-exit');
   }
   function fitToChevrons(look, force) {
     if (!grid) return;

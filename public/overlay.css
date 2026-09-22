@@ -279,6 +279,18 @@ body.bg-green { background: #00b140; }
   transition: column-gap var(--change-ms, 450ms) var(--ease),
               row-gap var(--change-ms, 450ms) var(--ease);
 }
+/* through a text swap the bar follows its text's height on the slide's own
+   clock: two lines to one shrinks with the swap instead of holding the taller
+   height and snapping at the end */
+#stage.prop-anim .txt { transition: height var(--change-ms, 450ms) var(--ease); }
+/* while a swap is in flight the cuts beside a chevron are recomputed every
+   frame to the bar's current height; they must land at once, not be eased
+   toward a target that has already moved on */
+#stage.prop-anim .box.cut-follow {
+  transition-property: background, background-color, color, width, min-width,
+                       border-radius, padding, font-size, letter-spacing,
+                       opacity, min-height;
+}
 #stage.prop-anim .box {
   transition-property: background, background-color, color, width, min-width,
                        border-radius, padding, font-size, letter-spacing,
